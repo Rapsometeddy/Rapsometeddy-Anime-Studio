@@ -20,3 +20,9 @@
 .shotInfo small{color:#9b93a8}
 .shotDialogue{margin:0;padding:0 13px 13px;color:#d9d0e3}
 @media(max-width:700px){.multiShotGrid{grid-template-columns:1fr}}
+
+.editTimeline{display:grid;gap:8px}
+.editRow{display:grid;grid-template-columns:42px 1fr auto;align-items:center;gap:12px;padding:13px;border:1px solid rgba(168,85,247,.18);border-radius:12px;background:rgba(255,255,255,.025)}
+.editIndex{font-weight:800}
+.editMix{font-size:11px;letter-spacing:.06em}
+@media(max-width:700px){.editRow{grid-template-columns:34px 1fr}.editMix{grid-column:2}}
