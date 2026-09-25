@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const steps = [
   "Story & script",
@@ -22,6 +22,20 @@ export default function Home() {
   const [result, setResult] = useState<any>(null);
   const [storyboard, setStoryboard] = useState<any[]>([]);
   const [error, setError] = useState("");
+  const [motionLoading, setMotionLoading] = useState(false);
+  const [motion, setMotion] = useState<any>(null);
+  const [playing, setPlaying] = useState(false);
+  const [activeShot, setActiveShot] = useState(0);
+
+  useEffect(() => {
+    if (!playing || !motion?.shots?.length) return;
+    const shot = motion.shots[activeShot];
+    const timer = window.setTimeout(() => {
+      if (activeShot >= motion.shots.length - 1) setPlaying(false);
+      else setActiveShot((n: number) => n + 1);
+    }, Math.max(1, Number(shot.duration) || 8) * 1000);
+    return () => window.clearTimeout(timer);
+  }, [playing, activeShot, motion]);
 
   async function generate() {
     setError("");
@@ -62,6 +76,21 @@ export default function Home() {
     } finally {
       setStoryboardLoading(false);
     }
+  }
+
+  async function generateMotion() {
+    if (!storyboard.length) return;
+    setError("");
+    setMotionLoading(true);
+    try {
+      const r = await fetch("/api/motion-plan", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ storyboard }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Motion planning failed");
+      setMotion(d);
+      setActiveShot(0);
+      setPlaying(false);
+    } catch (e: any) { setError(e.message); }
+    finally { setMotionLoading(false); }
   }
 
   function clearAll() {
@@ -206,7 +235,7 @@ export default function Home() {
         </section>
       )}
 
-      <footer className="footer">
+      {motion?.shots?.length > 0 && (\n        <section className="card motionStudio">\n          <div className="resultHeader"><div><div className="badge">MOTION PREVIEW</div><h2>Anime scene player</h2><p className="muted">{motion.totalDuration}s planned runtime • {motion.shots.length} shots</p></div><div className="modePill">{playing ? "PLAYING" : "READY"}</div></div>\n          <div className="motionStage">\n            <img src={motion.shots[activeShot].imageUrl} alt={motion.shots[activeShot].title} className={`motionImage ${motion.shots[activeShot].motion.replaceAll(" ", "-")}`} />\n            <div className="motionOverlay"><b>{String(motion.shots[activeShot].number).padStart(2,"0")} · {motion.shots[activeShot].title}</b><span>{motion.shots[activeShot].motion} • {motion.shots[activeShot].transition}</span></div>\n          </div>\n          <div className="motionControls"><button className="btn" onClick={() => setPlaying((v: boolean) => !v)}>{playing ? "⏸ Pause" : "▶ Play"}</button><button className="btn secondary" onClick={() => setActiveShot((n: number) => n >= motion.shots.length - 1 ? 0 : n + 1)}>Next shot →</button></div>\n          <div className="shotStrip">{motion.shots.map((shot: any, i: number) => <button key={shot.number} className={`shotChip ${i === activeShot ? "active" : ""}`} onClick={() => {setActiveShot(i);setPlaying(false)}}>{String(shot.number).padStart(2,"0")}</button>)}</div>\n          <div className="notice">{motion.notice}</div>\n        </section>\n      )}\n\n      <footer className="footer">
         Rapsometeddy Anime Studio • AI-assisted creative workspace • Preview → Approve → Publish
       </footer>
     </main>
