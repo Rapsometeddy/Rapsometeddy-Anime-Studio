@@ -41,3 +41,10 @@
 .workflowSteps span{padding:10px;border:1px solid rgba(168,85,247,.16);border-radius:10px;text-align:center;font-size:12px;color:#9b93a8}
 .workflowSteps span.active{color:#fff;border-color:rgba(168,85,247,.55);background:rgba(168,85,247,.12)}
 @media(max-width:700px){.workflowSteps{grid-template-columns:repeat(2,1fr)}}
+
+.projectLibraryCard{margin-top:22px}
+.projectList{display:grid;gap:8px;margin-top:14px}
+.projectRow{width:100%;display:flex;justify-content:space-between;gap:12px;text-align:left;padding:13px;border:1px solid rgba(168,85,247,.18);border-radius:12px;background:rgba(255,255,255,.025);color:inherit;cursor:pointer}
+.projectRow span:first-child{display:grid;gap:4px}
+.projectRow small{color:#9b93a8}
+.projectRow:hover{border-color:rgba(168,85,247,.5)}
