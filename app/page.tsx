@@ -102,6 +102,52 @@ export default function Home() {
     setAudioUrl(file ? URL.createObjectURL(file) : "");
   }
 
+  async function exportMp4() {
+    if (!motion?.shots?.length || exporting) return;
+    setError("");
+    setExporting(true);
+    setExportProgress(0);
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280; canvas.height = 720;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas is not supported on this device.");
+      const stream = canvas.captureStream(30);
+      const mime = MediaRecorder.isTypeSupported("video/mp4") ? "video/mp4" : "";
+      if (!mime) throw new Error("This browser does not support direct MP4 recording. Use the WebM export, then convert it with an FFmpeg-enabled renderer.");
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      const stopped = new Promise<void>(resolve => { recorder.onstop = () => resolve(); });
+      recorder.start(250);
+      for (let i = 0; i < motion.shots.length; i++) {
+        const shot = motion.shots[i];
+        const img = new Image(); img.crossOrigin = "anonymous";
+        await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error("Could not load storyboard frame.")); img.src = shot.imageUrl; });
+        const start = performance.now();
+        const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
+        while (performance.now() - start < duration) {
+          const p = Math.min(1, (performance.now() - start) / duration);
+          const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11 : shot.motion === "slow zoom out" ? 1.13 - p * .11 : 1.08;
+          const pan = shot.motion === "pan right" ? (-.02 + p * .04) : 0;
+          const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
+          const w = img.width * scale, h = img.height * scale;
+          ctx.fillStyle = "#08060f"; ctx.fillRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(img, (canvas.width-w)/2 + pan*canvas.width, (canvas.height-h)/2, w, h);
+          setExportProgress(Math.round(((i + p) / motion.shots.length) * 100));
+          await new Promise(r => requestAnimationFrame(r));
+        }
+      }
+      recorder.stop(); await stopped;
+      const blob = new Blob(chunks, { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `${title || "rapsometeddy-anime"}.mp4`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setExportProgress(100);
+    } catch (e: any) { setError(e.message || "MP4 export failed."); }
+    finally { setExporting(false); }
+  }
+
   async function exportVideo() {
     if (!motion?.shots?.length || exporting) return;
     setError("");
