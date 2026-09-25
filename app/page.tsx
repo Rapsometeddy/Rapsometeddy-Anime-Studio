@@ -26,6 +26,8 @@ export default function Home() {
   const [motion, setMotion] = useState<any>(null);
   const [playing, setPlaying] = useState(false);
   const [activeShot, setActiveShot] = useState(0);
+  const [exporting, setExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState(0);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -91,6 +93,53 @@ export default function Home() {
       setPlaying(false);
     } catch (e: any) { setError(e.message); }
     finally { setMotionLoading(false); }
+  }
+
+  async function exportVideo() {
+    if (!motion?.shots?.length || exporting) return;
+    setError("");
+    setExporting(true);
+    setExportProgress(0);
+    try {
+      const canvas = document.createElement("canvas");
+      canvas.width = 1280; canvas.height = 720;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("Canvas is not supported on this device.");
+      const stream = canvas.captureStream(30);
+      const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
+      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      const stopped = new Promise<void>(resolve => { recorder.onstop = () => resolve(); });
+      recorder.start(250);
+      for (let i = 0; i < motion.shots.length; i++) {
+        const shot = motion.shots[i];
+        const img = new Image(); img.crossOrigin = "anonymous";
+        await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error("Could not load storyboard frame.")); img.src = shot.imageUrl; });
+        const start = performance.now();
+        const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
+        while (performance.now() - start < duration) {
+          const p = Math.min(1, (performance.now() - start) / duration);
+          const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11 : shot.motion === "slow zoom out" ? 1.13 - p * .11 : 1.08;
+          const pan = shot.motion === "pan right" ? (-.02 + p * .04) : 0;
+          const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
+          const w = img.width * scale, h = img.height * scale;
+          ctx.fillStyle = "#08060f"; ctx.fillRect(0,0,canvas.width,canvas.height);
+          ctx.drawImage(img, (canvas.width-w)/2 + pan*canvas.width, (canvas.height-h)/2, w, h);
+          ctx.fillStyle = "rgba(8,6,15,.35)"; ctx.fillRect(0,0,canvas.width,canvas.height);
+          ctx.fillStyle = "white"; ctx.font = "700 28px Arial"; ctx.fillText(shot.title || `Scene ${i+1}`, 42, 58);
+          setExportProgress(Math.round(((i + p) / motion.shots.length) * 100));
+          await new Promise(r => requestAnimationFrame(r));
+        }
+      }
+      recorder.stop(); await stopped;
+      const blob = new Blob(chunks, { type: mime });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = `${title || "rapsometeddy-anime"}.webm`; a.click();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setExportProgress(100);
+    } catch (e: any) { setError(e.message || "Video export failed."); }
+    finally { setExporting(false); }
   }
 
   function clearAll() {
@@ -235,7 +284,7 @@ export default function Home() {
         </section>
       )}
 
-      {motion?.shots?.length > 0 && (\n        <section className="card motionStudio">\n          <div className="resultHeader"><div><div className="badge">MOTION PREVIEW</div><h2>Anime scene player</h2><p className="muted">{motion.totalDuration}s planned runtime • {motion.shots.length} shots</p></div><div className="modePill">{playing ? "PLAYING" : "READY"}</div></div>\n          <div className="motionStage">\n            <img src={motion.shots[activeShot].imageUrl} alt={motion.shots[activeShot].title} className={`motionImage ${motion.shots[activeShot].motion.replaceAll(" ", "-")}`} />\n            <div className="motionOverlay"><b>{String(motion.shots[activeShot].number).padStart(2,"0")} · {motion.shots[activeShot].title}</b><span>{motion.shots[activeShot].motion} • {motion.shots[activeShot].transition}</span></div>\n          </div>\n          <div className="motionControls"><button className="btn" onClick={() => setPlaying((v: boolean) => !v)}>{playing ? "⏸ Pause" : "▶ Play"}</button><button className="btn secondary" onClick={() => setActiveShot((n: number) => n >= motion.shots.length - 1 ? 0 : n + 1)}>Next shot →</button></div>\n          <div className="shotStrip">{motion.shots.map((shot: any, i: number) => <button key={shot.number} className={`shotChip ${i === activeShot ? "active" : ""}`} onClick={() => {setActiveShot(i);setPlaying(false)}}>{String(shot.number).padStart(2,"0")}</button>)}</div>\n          <div className="notice">{motion.notice}</div>\n        </section>\n      )}\n\n      <footer className="footer">
+      {motion?.shots?.length > 0 && (\n        <section className="card motionStudio">\n          <div className="resultHeader"><div><div className="badge">MOTION PREVIEW</div><h2>Anime scene player</h2><p className="muted">{motion.totalDuration}s planned runtime • {motion.shots.length} shots</p></div><div className="modePill">{playing ? "PLAYING" : "READY"}</div></div>\n          <div className="motionStage">\n            <img src={motion.shots[activeShot].imageUrl} alt={motion.shots[activeShot].title} className={`motionImage ${motion.shots[activeShot].motion.replaceAll(" ", "-")}`} />\n            <div className="motionOverlay"><b>{String(motion.shots[activeShot].number).padStart(2,"0")} · {motion.shots[activeShot].title}</b><span>{motion.shots[activeShot].motion} • {motion.shots[activeShot].transition}</span></div>\n          </div>\n          <div className="motionControls"><button className="btn" onClick={() => setPlaying((v: boolean) => !v)}>{playing ? "⏸ Pause" : "▶ Play"}</button><button className="btn secondary" onClick={() => setActiveShot((n: number) => n >= motion.shots.length - 1 ? 0 : n + 1)}>Next shot →</button></div>\n          <div className="shotStrip">{motion.shots.map((shot: any, i: number) => <button key={shot.number} className={`shotChip ${i === activeShot ? "active" : ""}`} onClick={() => {setActiveShot(i);setPlaying(false)}}>{String(shot.number).padStart(2,"0")}</button>)}</div>\n          <div className="notice">{motion.notice}</div>\n        </section>\n      )}\n\n      {motion?.shots?.length > 0 && (\n        <section className="card exportCard">\n          <div className="resultHeader"><div><div className="badge">VIDEO EXPORT</div><h2>Render episode</h2><p className="muted">Create a real video file from the storyboard motion plan directly in your browser.</p></div><div className="modePill">WEBM</div></div>\n          <button className="btn" disabled={exporting} onClick={exportVideo}>{exporting ? `Rendering ${exportProgress}%…` : "⬇️ Export animated video"}</button>\n          <div className="progress"><div className="progressBar" style={{width: `${exportProgress}%`}} /></div>\n          <div className="muted">The export currently renders video only. Your song/audio is kept for the later audio-mix stage.</div>\n        </section>\n      )}\n\n      <footer className="footer">
         Rapsometeddy Anime Studio • AI-assisted creative workspace • Preview → Approve → Publish
       </footer>
     </main>
