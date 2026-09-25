@@ -59,6 +59,12 @@ export default function Home() {
   const [workflowStatus, setWorkflowStatus] = useState("draft");
   const [workflowLoading, setWorkflowLoading] = useState(false);
   const [workflowMessage, setWorkflowMessage] = useState("");
+  const [youtubePrivacy, setYoutubePrivacy] = useState("private");
+  const [youtubeVideoFile, setYoutubeVideoFile] = useState<File | null>(null);
+  const [youtubePublishing, setYoutubePublishing] = useState(false);
+  const [youtubeUploadProgress, setYoutubeUploadProgress] = useState(0);
+  const [youtubeVideoUrl, setYoutubeVideoUrl] = useState("");
+  const [youtubeConnected, setYoutubeConnected] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -254,6 +260,57 @@ export default function Home() {
     a.target = "_blank";
     a.rel = "noreferrer";
     a.click();
+  }
+
+  async function connectYoutube() {
+    window.location.href = "/api/youtube/auth";
+  }
+
+  async function publishToYoutube() {
+    if (workflowStatus !== "approved") {
+      setError("Approve the episode first.");
+      return;
+    }
+    if (!youtubeVideoFile) {
+      setError("Choose the rendered MP4 file first.");
+      return;
+    }
+    setError(""); setYoutubePublishing(true); setYoutubeUploadProgress(0);
+    try {
+      const r = await fetch("/api/youtube/publish", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          workflowStatus,
+          privacyStatus: youtubePrivacy,
+          title: youtubePackage?.title || result?.episode?.title || title,
+          description: youtubePackage?.description || "",
+          tags: youtubePackage?.tags || []
+        })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || d.message || "Could not start YouTube upload.");
+      if (!d.uploadUrl) throw new Error("YouTube did not return an upload session.");
+      const upload = await fetch(d.uploadUrl, {
+        method: "PUT",
+        headers: { "Content-Type": youtubeVideoFile.type || "video/mp4", "Content-Length": String(youtubeVideoFile.size) },
+        body: youtubeVideoFile
+      });
+      if (!upload.ok) {
+        const message = await upload.text().catch(() => "");
+        throw new Error(message || `YouTube upload failed (${upload.status}).`);
+      }
+      const video = await upload.json();
+      const id = video.id;
+      if (id) {
+        setYoutubeVideoUrl(`https://www.youtube.com/watch?v=${id}`);
+        setYoutubeUploadProgress(100);
+        setWorkflowStatus("published");
+        setWorkflowMessage("YouTube upload completed.");
+      }
+    } catch (e: any) {
+      setError(e.message || "YouTube upload failed.");
+    } finally { setYoutubePublishing(false); }
   }
 
   async function workflowAction(action: string) {
@@ -535,7 +592,7 @@ export default function Home() {
   function clearAll() {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setTitle(""); setStory(""); setSong(""); setStarted(false);
-    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null); setYoutubePackage(null); setThumbnail(null); setWorkflowStatus("draft"); setWorkflowMessage("");
+    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null); setYoutubePackage(null); setThumbnail(null); setWorkflowStatus("draft"); setWorkflowMessage(""); setYoutubeVideoFile(null); setYoutubeVideoUrl(""); setYoutubeConnected(false); setYoutubeUploadProgress(0);
     setError(""); setAudioFile(null); setAudioUrl("");
   }
 
@@ -583,15 +640,45 @@ export default function Home() {
       {result && <section className="card result"><div className="resultHeader"><div><div className="badge">EPISODE BLUEPRINT</div><h2>{result.episode?.title}</h2><p className="muted">{result.episode?.logline}</p></div>{result.mode && <div className="modePill">{result.mode}</div>}</div>{result.notice && <div className="notice">{result.notice}</div>}<h3>Scenes</h3>{(result.episode?.scenes || []).map((s: any) => <div className="scene" key={s.number}><b>{s.number}. {s.title}</b><div className="muted">{s.prompt}</div>{s.dialogue && <p>{s.dialogue}</p>}</div>)}</section>}
 
       {result && <section className="card workflowCard">
-        <div className="resultHeader"><div><div className="badge">🚦 EPISODE WORKFLOW</div><h2>Preview → Approve → Publish</h2><p className="muted">Keep publishing under your control. The app only advances the episode when you approve it.</p></div><div className="modePill">{workflowStatus.toUpperCase()}</div></div>
+        <div className="resultHeader"><div><div className="badge">🚦 EPISODE WORKFLOW</div><h2>Preview → Approve → Publish</h2><p className="muted">Publishing stays behind an explicit approval gate.</p></div><div className="modePill">{workflowStatus.toUpperCase()}</div></div>
         <div className="workflowSteps"><span className={workflowStatus === "draft" ? "active" : ""}>1. Draft</span><span className={workflowStatus === "review" ? "active" : ""}>2. Review</span><span className={workflowStatus === "approved" ? "active" : ""}>3. Approved</span><span className={workflowStatus === "published" ? "active" : ""}>4. Published</span></div>
         <div className="motionControls">
           {workflowStatus === "draft" && <button className="btn" disabled={workflowLoading} onClick={() => workflowAction("submit")}>👀 Submit for review</button>}
           {workflowStatus === "review" && <><button className="btn" disabled={workflowLoading} onClick={() => workflowAction("approve")}>✅ Approve episode</button><button className="btn secondary" disabled={workflowLoading} onClick={() => workflowAction("reject")}>↩️ Send back to draft</button></>}
-          {workflowStatus === "approved" && <><button className="btn storyboardBtn" disabled={workflowLoading} onClick={() => workflowAction("publish")}>🚀 Mark as published</button><button className="btn secondary" disabled={workflowLoading} onClick={() => workflowAction("reject")}>↩️ Reopen draft</button></>}
-          {workflowStatus === "published" && <span className="notice">🚀 Published state recorded. External YouTube upload is intentionally not automatic yet.</span>}
+          {workflowStatus === "approved" && <button className="btn secondary" disabled={workflowLoading} onClick={() => workflowAction("reject")}>↩️ Reopen draft</button>}
+          {workflowStatus === "published" && <span className="notice">🚀 Published on YouTube.</span>}
         </div>
         {workflowMessage && <div className="notice">{workflowMessage}</div>}
+      </section>
+
+      {result && <section className="card youtubePublisherCard">
+        <div className="resultHeader"><div><div className="badge">📺 YOUTUBE PUBLISHER</div><h2>Connect and upload</h2><p className="muted">OAuth connects your own YouTube channel. The MP4 is uploaded directly from your device to the YouTube upload session.</p></div><div className="modePill">{youtubeConnected ? "CONNECTED" : "NOT CONNECTED"}</div></div>
+        <div className="ytPublishGrid">
+          <div>
+            <div className="label">YouTube connection</div>
+            <button className="btn" onClick={connectYoutube}>🔗 Connect YouTube</button>
+            <div className="muted">Requires Google OAuth environment variables in Vercel.</div>
+          </div>
+          <div>
+            <div className="label">Privacy</div>
+            <select className="input" value={youtubePrivacy} onChange={e => setYoutubePrivacy(e.target.value)}>
+              <option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option>
+            </select>
+            <div className="muted">YouTube may restrict uploads from unverified API projects to private visibility.</div>
+          </div>
+          <div>
+            <div className="label">Rendered MP4</div>
+            <input className="input" type="file" accept="video/mp4,video/*" onChange={e => setYoutubeVideoFile(e.target.files?.[0] || null)} />
+            {youtubeVideoFile && <div className="muted">🎬 {youtubeVideoFile.name} • {(youtubeVideoFile.size / 1024 / 1024).toFixed(1)} MB</div>}
+          </div>
+        </div>
+        <div className="motionControls">
+          <button className="btn storyboardBtn" disabled={youtubePublishing || workflowStatus !== "approved" || !youtubeVideoFile} onClick={publishToYoutube}>
+            {youtubePublishing ? `Uploading ${youtubeUploadProgress}%…` : "🚀 Upload approved episode"}
+          </button>
+        </div>
+        {youtubeVideoUrl && <div className="notice">✅ Uploaded: <a href={youtubeVideoUrl} target="_blank" rel="noreferrer">{youtubeVideoUrl}</a></div>}
+        <div className="notice">Approval gate: the upload button only works while the episode is <b>approved</b>.</div>
       </section>
 
       {characterBible.length > 0 && <section className="card characterCard">
