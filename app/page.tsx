@@ -65,6 +65,11 @@ export default function Home() {
   const [youtubeUploadProgress, setYoutubeUploadProgress] = useState(0);
   const [youtubeVideoUrl, setYoutubeVideoUrl] = useState("");
   const [youtubeConnected, setYoutubeConnected] = useState(false);
+  const [projects, setProjects] = useState<any[]>([]);
+  const [projectKey, setProjectKey] = useState("");
+  const [projectSaving, setProjectSaving] = useState(false);
+  const [projectLoading, setProjectLoading] = useState(false);
+  const [projectMessage, setProjectMessage] = useState("");
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -260,6 +265,81 @@ export default function Home() {
     a.target = "_blank";
     a.rel = "noreferrer";
     a.click();
+  }
+
+  async function loadProjects() {
+    setProjectLoading(true);
+    try {
+      const r = await fetch("/api/projects");
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not load projects.");
+      setProjects(d);
+    } catch (e: any) { setProjectMessage(e.message || "Could not load projects."); }
+    finally { setProjectLoading(false); }
+  }
+
+  async function saveProject() {
+    if (!result?.episode) { setProjectMessage("Generate an episode first."); return; }
+    setProjectSaving(true);
+    try {
+      const r = await fetch("/api/projects", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project: {
+            projectKey: projectKey || crypto.randomUUID(),
+            title: result.episode.title || title || "Untitled Anime Episode",
+            story,
+            song,
+            blueprint: result.episode,
+            characterBible,
+            characterRefs,
+            storyboard,
+            multiShots,
+            motion,
+            timeline,
+            autoEdit,
+            youtubePackage,
+            thumbnail,
+            workflowStatus,
+            youtubeVideoUrl: youtubeVideoUrl || null
+          }
+        })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Could not save project.");
+      setProjectKey(d.project_key);
+      setProjectMessage("💾 Project saved.");
+      loadProjects();
+    } catch (e: any) { setProjectMessage(e.message || "Could not save project."); }
+    finally { setProjectSaving(false); }
+  }
+
+  async function openProject(key: string) {
+    setProjectLoading(true);
+    try {
+      const r = await fetch(`/api/projects/${encodeURIComponent(key)}`);
+      const p = await r.json();
+      if (!r.ok) throw new Error(p.error || "Could not open project.");
+      setProjectKey(p.project_key);
+      setTitle(p.title || "");
+      setStory(p.story || "");
+      setSong(p.song || "");
+      setResult(p.blueprint ? { episode: p.blueprint } : null);
+      setCharacterBible(p.character_bible || []);
+      setCharacterRefs(p.character_refs || []);
+      setStoryboard(p.storyboard || []);
+      setMultiShots(p.multi_shots || []);
+      setMotion(p.motion || null);
+      setTimeline(p.timeline || []);
+      setAutoEdit(p.auto_edit || null);
+      setYoutubePackage(p.youtube_package || null);
+      setThumbnail(p.thumbnail || null);
+      setWorkflowStatus(p.workflow_status || "draft");
+      setYoutubeVideoUrl(p.youtube_video_url || "");
+      setProjectMessage(`📂 Opened "${p.title}".`);
+    } catch (e: any) { setProjectMessage(e.message || "Could not open project."); }
+    finally { setProjectLoading(false); }
   }
 
   async function connectYoutube() {
@@ -649,6 +729,21 @@ export default function Home() {
           {workflowStatus === "published" && <span className="notice">🚀 Published on YouTube.</span>}
         </div>
         {workflowMessage && <div className="notice">{workflowMessage}</div>}
+      </section>
+
+      <section className="card projectLibraryCard">
+        <div className="resultHeader"><div><div className="badge">🗂️ PROJECT LIBRARY</div><h2>Save & reopen episodes</h2><p className="muted">Your episode blueprint, characters, storyboard, motion, edit plan, thumbnail and YouTube package are stored in Supabase.</p></div></div>
+        <div className="motionControls">
+          <button className="btn" disabled={projectSaving || !result?.episode} onClick={saveProject}>{projectSaving ? "Saving…" : "💾 Save project"}</button>
+          <button className="btn secondary" disabled={projectLoading} onClick={loadProjects}>↻ Refresh library</button>
+        </div>
+        {projectMessage && <div className="notice">{projectMessage}</div>}
+        <div className="projectList">
+          {projects.length === 0 && <div className="muted">No saved episodes loaded yet.</div>}
+          {projects.map((p) => <button key={p.project_key} className="projectRow" onClick={() => openProject(p.project_key)}>
+            <span><b>{p.title}</b><small>{new Date(p.updated_at).toLocaleString()} • {p.workflow_status}</small></span><span>Open →</span>
+          </button>)}
+        </div>
       </section>
 
       {result && <section className="card youtubePublisherCard">
