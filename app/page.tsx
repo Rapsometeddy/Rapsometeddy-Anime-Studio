@@ -52,6 +52,8 @@ export default function Home() {
   const [multiShotLoading, setMultiShotLoading] = useState(false);
   const [autoEdit, setAutoEdit] = useState<any>(null);
   const [autoEditLoading, setAutoEditLoading] = useState(false);
+  const [youtubePackage, setYoutubePackage] = useState<any>(null);
+  const [youtubeLoading, setYoutubeLoading] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -195,6 +197,33 @@ export default function Home() {
       setAutoEdit(d);
     } catch (e: any) { setError(e.message || "Auto edit failed."); }
     finally { setAutoEditLoading(false); }
+  }
+
+  async function buildYoutubePackage() {
+    if (!result?.episode) return;
+    setError(""); setYoutubeLoading(true);
+    try {
+      const r = await fetch("/api/youtube-package", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ episode: result.episode, autoEdit })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "YouTube package failed");
+      setYoutubePackage(d);
+    } catch (e: any) { setError(e.message || "YouTube package failed."); }
+    finally { setYoutubeLoading(false); }
+  }
+
+  function downloadYoutubePackage() {
+    if (!youtubePackage) return;
+    const blob = new Blob([JSON.stringify(youtubePackage, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title || "rapsometeddy-anime"}-youtube-package.json`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 3000);
   }
 
   function speakScene(scene?: any) {
@@ -464,7 +493,7 @@ export default function Home() {
   function clearAll() {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setTitle(""); setStory(""); setSong(""); setStarted(false);
-    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null);
+    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null); setYoutubePackage(null);
     setError(""); setAudioFile(null); setAudioUrl("");
   }
 
@@ -497,7 +526,7 @@ export default function Home() {
             {result?.episode && characterBible.length === 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
             {(storyboard.length > 0 || multiShots.length > 0) && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : multiShots.length ? "🎞️ Animate multi-shot scenes" : "🎞️ Animate storyboard"}</button>}
             {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={autoEditLoading} onClick={runAutoEdit}>{autoEditLoading ? "Editing episode…" : "🎬 Auto Edit Episode"}</button>}
-            {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
+            {autoEdit && <button className="btn storyboardBtn" disabled={youtubeLoading} onClick={buildYoutubePackage}>{youtubeLoading ? "Preparing YouTube package…" : "📺 Build YouTube package"}</button>}\n            {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
             {error && <div className="error">{error}</div>}
             <button className="btn secondary" onClick={clearAll}>Clear</button>
           </div>
@@ -538,6 +567,16 @@ export default function Home() {
         <div className="resultHeader"><div><div className="badge">🎬 AUTO EDIT ENGINE</div><h2>Episode cut assembled</h2><p className="muted">{autoEdit.totalDuration}s final runtime • {autoEdit.edits?.length || 0} shots • dialogue-aware music mix</p></div><div className="modePill">READY</div></div>
         <div className="editTimeline">{(autoEdit.edits || []).map((e: any) => <article className="editRow" key={e.order}><span className="editIndex">{String(e.order).padStart(2,"0")}</span><div><b>{e.title}</b><div className="muted">{formatTime(e.start)} → {formatTime(e.start + e.duration)} • {e.motion}</div></div><span className="editMix">{e.musicDuck ? "🎙️ MUSIC DUCK" : "🎵 FULL MUSIC"}</span></article>)}</div>
         <div className="notice">🎵 Original music: {autoEdit.audioMix?.music}. During dialogue, the planned music level drops to {Math.round((autoEdit.audioMix?.dialogueMusicGain || 0.35) * 100)}%.</div>
+      </section>
+
+      {youtubePackage && <section className="card youtubeCard">
+        <div className="resultHeader"><div><div className="badge">📺 YOUTUBE PACKAGE</div><h2>Upload-ready episode metadata</h2><p className="muted">Title, description, chapters, tags and thumbnail direction generated from your episode.</p></div><div className="modePill">READY</div></div>
+        <div className="ytBlock"><b>Title</b><div className="copyBox">{youtubePackage.title}</div></div>
+        <div className="ytBlock"><b>Description</b><pre className="copyBox pre">{youtubePackage.description}</pre></div>
+        <div className="ytBlock"><b>Tags</b><div className="tagList">{(youtubePackage.tags || []).map((t: string) => <span className="tag" key={t}>{t}</span>)}</div></div>
+        <div className="ytBlock"><b>Thumbnail prompt</b><div className="copyBox">{youtubePackage.thumbnailPrompt}</div></div>
+        <div className="ytBlock"><b>Upload checklist</b>{(youtubePackage.uploadChecklist || []).map((x: string) => <div className="check" key={x}>☐ {x}</div>)}</div>
+        <button className="btn storyboardBtn" onClick={downloadYoutubePackage}>⬇️ Export YouTube package</button>
       </section>
 
       {timeline.length > 0 && <section className="card voiceCard">
