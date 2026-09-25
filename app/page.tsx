@@ -44,6 +44,10 @@ export default function Home() {
   const [voiceClips, setVoiceClips] = useState<Record<number, File>>({});
   const [recordingScene, setRecordingScene] = useState<number | null>(null);
   const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
+  const [characterBible, setCharacterBible] = useState<any[]>([]);
+  const [characterLoading, setCharacterLoading] = useState(false);
+  const [characterRefs, setCharacterRefs] = useState<Record<string, string>>({});
+  const [characterRefLoading, setCharacterRefLoading] = useState<string | null>(null);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -80,9 +84,41 @@ export default function Home() {
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Generation failed");
-      setResult(d); setStarted(true);
+      setResult(d); setCharacterBible([]); setCharacterRefs({}); setStarted(true);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
+  }
+
+  async function buildCharacterBible() {
+    if (!result?.episode?.characters?.length) {
+      setError("Generate an AI episode with characters first, or add character data to the episode blueprint.");
+      return;
+    }
+    setError(""); setCharacterLoading(true);
+    try {
+      const r = await fetch("/api/character-bible", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ characters: result.episode.characters })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Character bible failed");
+      setCharacterBible(d.characters || []);
+    } catch (e: any) { setError(e.message || "Character bible failed."); }
+    finally { setCharacterLoading(false); }
+  }
+
+  async function generateCharacterReference(character: any) {
+    setCharacterRefLoading(character.id);
+    try {
+      const r = await fetch("/api/character-reference", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ character })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Reference generation failed");
+      setCharacterRefs(prev => ({ ...prev, [character.id]: d.imageUrl }));
+    } catch (e: any) { setError(e.message || "Character reference failed."); }
+    finally { setCharacterRefLoading(null); }
   }
 
   async function generateStoryboard() {
@@ -91,7 +127,7 @@ export default function Home() {
     try {
       const r = await fetch("/api/storyboard", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ episode: result.episode })
+        body: JSON.stringify({ episode: result.episode, characterBible })
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Storyboard generation failed");
@@ -414,7 +450,9 @@ export default function Home() {
             <div><div className="label">Original song file</div><input className="input" type="file" accept="audio/*" onChange={e => selectAudio(e.target.files?.[0] || null)} /></div>
             {audioUrl && <audio controls src={audioUrl} className="audioPlayer" />}
             <button className="btn" disabled={loading} onClick={generate}>{loading ? "Generating…" : started ? "Regenerate episode" : "Generate episode"}</button>
-            {result?.episode && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
+            {result?.episode?.characters?.length > 0 && <button className="btn storyboardBtn" disabled={characterLoading} onClick={buildCharacterBible}>{characterLoading ? "Locking characters…" : characterBible.length ? "👑 Character bible locked" : "👑 Build character bible"}</button>}
+            {characterBible.length > 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate locked storyboard"}</button>}
+            {result?.episode && characterBible.length === 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
             {storyboard.length > 0 && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : "🎞️ Animate storyboard"}</button>}
             {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
             {error && <div className="error">{error}</div>}
@@ -429,6 +467,16 @@ export default function Home() {
       </div>
 
       {result && <section className="card result"><div className="resultHeader"><div><div className="badge">EPISODE BLUEPRINT</div><h2>{result.episode?.title}</h2><p className="muted">{result.episode?.logline}</p></div>{result.mode && <div className="modePill">{result.mode}</div>}</div>{result.notice && <div className="notice">{result.notice}</div>}<h3>Scenes</h3>{(result.episode?.scenes || []).map((s: any) => <div className="scene" key={s.number}><b>{s.number}. {s.title}</b><div className="muted">{s.prompt}</div>{s.dialogue && <p>{s.dialogue}</p>}</div>)}</section>}
+
+      {characterBible.length > 0 && <section className="card characterCard">
+        <div className="resultHeader"><div><div className="badge">👑 CHARACTER CONSISTENCY ENGINE</div><h2>Character Bible</h2><p className="muted">These visual locks are reused in storyboard prompts so the cast stays consistent from scene to scene.</p></div><div className="modePill">LOCKED</div></div>
+        <div className="characterGrid">{characterBible.map((c: any) => <article className="characterPanel" key={c.id}>
+          <div className="characterRefWrap">{characterRefs[c.id] ? <img src={characterRefs[c.id]} alt={c.name + " reference sheet"} className="characterRef" /> : <div className="characterPlaceholder"><span>👑</span><b>{c.name}</b><small>Reference sheet not generated</small></div>}</div>
+          <div className="characterBody"><h3>{c.name}</h3><div className="muted">{c.role} • {c.age}</div><p><b>Look:</b> {c.appearance}</p><p><b>Hair:</b> {c.hair} · <b>Eyes:</b> {c.eyes}</p><p><b>Outfit:</b> {c.outfit}</p><p><b>Palette:</b> {c.palette}</p><div className="lockBox">🔒 {c.consistency_anchor}</div>
+            <button className="btn storyboardBtn" disabled={characterRefLoading === c.id} onClick={() => generateCharacterReference(c)}>{characterRefLoading === c.id ? "Generating reference…" : characterRefs[c.id] ? "Regenerate reference" : "🎨 Generate reference sheet"}</button>
+          </div>
+        </article>)}</div>
+      </section>
 
       {storyboard.length > 0 && <section className="card storyboard"><div className="resultHeader"><div><div className="badge">VISUAL STORYBOARD</div><h2>{result?.episode?.title || "Episode storyboard"}</h2><p className="muted">Cinematic frames become the visual base for motion, dialogue and subtitles.</p></div><div className="modePill">{storyboard.length} frames</div></div><div className="storyboardGrid">{storyboard.map((frame: any) => <article className="frameCard" key={frame.number}><div className="frameImageWrap"><img src={frame.imageUrl} alt={`Storyboard frame ${frame.number}: ${frame.title}`} className="frameImage" loading="lazy" /><span className="frameNumber">{String(frame.number).padStart(2, "0")}</span></div><div className="frameBody"><h3>{frame.title}</h3><div className="muted">{frame.duration}s • cinematic 16:9</div>{frame.dialogue && <p>{frame.dialogue}</p>}</div></article>)}</div></section>}
 
