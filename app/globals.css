@@ -33,3 +33,6 @@
 .tagList{display:flex;flex-wrap:wrap;gap:7px}
 .tag{padding:6px 9px;border-radius:999px;border:1px solid rgba(168,85,247,.2);font-size:12px}
 .check{padding:7px 0;color:#d9d0e3}
+
+.thumbnailPreview{overflow:hidden;border-radius:16px;border:1px solid rgba(168,85,247,.22);background:#08060f}
+.thumbnailPreview img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
