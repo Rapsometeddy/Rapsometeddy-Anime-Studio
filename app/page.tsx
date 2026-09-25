@@ -27,7 +27,9 @@ export default function Home() {
   const [playing, setPlaying] = useState(false);
   const [activeShot, setActiveShot] = useState(0);
   const [exporting, setExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);\n  const [audioFile, setAudioFile] = useState<File | null>(null);\n  const [audioUrl, setAudioUrl] = useState("");
+  const [exportProgress, setExportProgress] = useState(0);
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioUrl, setAudioUrl] = useState("");
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -95,7 +97,12 @@ export default function Home() {
     finally { setMotionLoading(false); }
   }
 
-  function selectAudio(file: File | null) {\n    setAudioFile(file);\n    setAudioUrl(file ? URL.createObjectURL(file) : "");\n  }\n\n  async function exportVideo() {
+  function selectAudio(file: File | null) {
+    setAudioFile(file);
+    setAudioUrl(file ? URL.createObjectURL(file) : "");
+  }
+
+  async function exportVideo() {
     if (!motion?.shots?.length || exporting) return;
     setError("");
     setExporting(true);
@@ -132,7 +139,8 @@ export default function Home() {
           await new Promise(r => requestAnimationFrame(r));
         }
       }
-      if (audio) audio.pause();\n      recorder.stop(); await stopped;
+      if (audio) audio.pause();
+      recorder.stop(); await stopped;
       const blob = new Blob(chunks, { type: mime });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = `${title || "rapsometeddy-anime"}.webm`; a.click();
@@ -284,7 +292,29 @@ export default function Home() {
         </section>
       )}
 
-      {motion?.shots?.length > 0 && (\n        <section className="card motionStudio">\n          <div className="resultHeader"><div><div className="badge">MOTION PREVIEW</div><h2>Anime scene player</h2><p className="muted">{motion.totalDuration}s planned runtime • {motion.shots.length} shots</p></div><div className="modePill">{playing ? "PLAYING" : "READY"}</div></div>\n          <div className="motionStage">\n            <img src={motion.shots[activeShot].imageUrl} alt={motion.shots[activeShot].title} className={`motionImage ${motion.shots[activeShot].motion.replaceAll(" ", "-")}`} />\n            <div className="motionOverlay"><b>{String(motion.shots[activeShot].number).padStart(2,"0")} · {motion.shots[activeShot].title}</b><span>{motion.shots[activeShot].motion} • {motion.shots[activeShot].transition}</span></div>\n          </div>\n          <div className="motionControls"><button className="btn" onClick={() => setPlaying((v: boolean) => !v)}>{playing ? "⏸ Pause" : "▶ Play"}</button><button className="btn secondary" onClick={() => setActiveShot((n: number) => n >= motion.shots.length - 1 ? 0 : n + 1)}>Next shot →</button></div>\n          <div className="shotStrip">{motion.shots.map((shot: any, i: number) => <button key={shot.number} className={`shotChip ${i === activeShot ? "active" : ""}`} onClick={() => {setActiveShot(i);setPlaying(false)}}>{String(shot.number).padStart(2,"0")}</button>)}</div>\n          <div className="notice">{motion.notice}</div>\n        </section>\n      )}\n\n      {motion?.shots?.length > 0 && (\n        <section className="card exportCard">\n          <div className="resultHeader"><div><div className="badge">VIDEO EXPORT</div><h2>Render episode</h2><p className="muted">Create a real video file from the storyboard motion plan directly in your browser.</p></div><div className="modePill">WEBM</div></div>\n          <button className="btn" disabled={exporting} onClick={exportVideo}>{exporting ? `Rendering ${exportProgress}%…` : "⬇️ Export animated video"}</button>\n          <div className="progress"><div className="progressBar" style={{width: `${exportProgress}%`}} /></div>\n          <div className="muted">The export currently renders video only. Your song/audio is kept for the later audio-mix stage.</div>\n        </section>\n      )}\n\n      <footer className="footer">
+      {motion?.shots?.length > 0 && (
+        <section className="card motionStudio">
+          <div className="resultHeader"><div><div className="badge">MOTION PREVIEW</div><h2>Anime scene player</h2><p className="muted">{motion.totalDuration}s planned runtime • {motion.shots.length} shots</p></div><div className="modePill">{playing ? "PLAYING" : "READY"}</div></div>
+          <div className="motionStage">
+            <img src={motion.shots[activeShot].imageUrl} alt={motion.shots[activeShot].title} className={`motionImage ${motion.shots[activeShot].motion.replaceAll(" ", "-")}`} />
+            <div className="motionOverlay"><b>{String(motion.shots[activeShot].number).padStart(2,"0")} · {motion.shots[activeShot].title}</b><span>{motion.shots[activeShot].motion} • {motion.shots[activeShot].transition}</span></div>
+          </div>
+          <div className="motionControls"><button className="btn" onClick={() => setPlaying((v: boolean) => !v)}>{playing ? "⏸ Pause" : "▶ Play"}</button><button className="btn secondary" onClick={() => setActiveShot((n: number) => n >= motion.shots.length - 1 ? 0 : n + 1)}>Next shot →</button></div>
+          <div className="shotStrip">{motion.shots.map((shot: any, i: number) => <button key={shot.number} className={`shotChip ${i === activeShot ? "active" : ""}`} onClick={() => {setActiveShot(i);setPlaying(false)}}>{String(shot.number).padStart(2,"0")}</button>)}</div>
+          <div className="notice">{motion.notice}</div>
+        </section>
+      )}
+
+      {motion?.shots?.length > 0 && (
+        <section className="card exportCard">
+          <div className="resultHeader"><div><div className="badge">VIDEO EXPORT</div><h2>Render episode</h2><p className="muted">Create a real video file from the storyboard motion plan directly in your browser.</p></div><div className="modePill">WEBM</div></div>
+          <button className="btn" disabled={exporting} onClick={exportVideo}>{exporting ? `Rendering ${exportProgress}%…` : "⬇️ Export animated video"}</button>
+          <div className="progress"><div className="progressBar" style={{width: `${exportProgress}%`}} /></div>
+          <div className="muted">The export currently renders video only. Your song/audio is kept for the later audio-mix stage.</div>
+        </section>
+      )}
+
+      <footer className="footer">
         Rapsometeddy Anime Studio • AI-assisted creative workspace • Preview → Approve → Publish
       </footer>
     </main>
