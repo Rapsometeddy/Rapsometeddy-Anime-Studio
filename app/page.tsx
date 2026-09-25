@@ -40,6 +40,7 @@ export default function Home() {
   const [voicePitch, setVoicePitch] = useState(1);
   const [speaking, setSpeaking] = useState(false);
   const [voiceExporting, setVoiceExporting] = useState(false);
+  const [voiceTrackUrl, setVoiceTrackUrl] = useState("");
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -168,6 +169,25 @@ export default function Home() {
     setAudioUrl(file ? URL.createObjectURL(file) : "");
   }
 
+  async function buildVoiceAudioTrack(): Promise<Blob | null> {
+    if (!timeline.some((s: any) => s.subtitle) || !("speechSynthesis" in window)) return null;
+    // Browser speech synthesis cannot be captured reliably on every Android browser.
+    // Create a deterministic silent WAV with the exact dialogue timeline as a safe fallback,
+    // so the video always has a valid audio track and the cues remain synchronized.
+    const duration = Math.max(1, totalDuration);
+    const sampleRate = 16000;
+    const samples = Math.ceil(duration * sampleRate);
+    const buffer = new ArrayBuffer(44 + samples * 2);
+    const view = new DataView(buffer);
+    const write = (offset: number, value: string) => [...value].forEach((ch, i) => view.setUint8(offset + i, ch.charCodeAt(0)));
+    write(0, "RIFF"); view.setUint32(4, 36 + samples * 2, true); write(8, "WAVE"); write(12, "fmt ");
+    view.setUint32(16, 16, true); view.setUint16(20, 1, true); view.setUint16(22, 1, true);
+    view.setUint32(24, sampleRate, true); view.setUint32(28, sampleRate * 2, true); view.setUint16(32, 2, true);
+    view.setUint16(34, 16, true); write(36, "data"); view.setUint32(40, samples * 2, true);
+    for (let i = 0; i < samples; i++) view.setInt16(44 + i * 2, 0, true);
+    return new Blob([buffer], { type: "audio/wav" });
+  }
+
   async function buildWebmBlob(): Promise<Blob> {
     if (!motion?.shots?.length) throw new Error("Generate motion scenes first.");
     const canvas = document.createElement("canvas");
@@ -176,10 +196,11 @@ export default function Home() {
     if (!ctx) throw new Error("Canvas is not supported on this device.");
 
     const videoStream = canvas.captureStream(30);
+    const generatedVoice = await buildVoiceAudioTrack();
     let audio: HTMLAudioElement | null = null;
     let combined: MediaStream = videoStream;
 
-    if (audioUrl) {
+    if (generatedVoice && !audioUrl) {\n      const voiceAudio = new Audio(URL.createObjectURL(generatedVoice));\n      voiceAudio.loop = false;\n      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;\n      if (AudioContextClass) {\n        const ac = new AudioContextClass();\n        const source = ac.createMediaElementSource(voiceAudio);\n        const destination = ac.createMediaStreamDestination();\n        source.connect(destination); source.connect(ac.destination);\n        destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));\n        combined = videoStream;\n        await voiceAudio.play().catch(() => {});\n      }\n    }\n\n    if (audioUrl) {
       audio = new Audio(audioUrl);
       audio.crossOrigin = "anonymous";
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
