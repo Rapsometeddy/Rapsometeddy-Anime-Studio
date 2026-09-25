@@ -48,6 +48,8 @@ export default function Home() {
   const [characterLoading, setCharacterLoading] = useState(false);
   const [characterRefs, setCharacterRefs] = useState<Record<string, string>>({});
   const [characterRefLoading, setCharacterRefLoading] = useState<string | null>(null);
+  const [multiShots, setMultiShots] = useState<any[]>([]);
+  const [multiShotLoading, setMultiShotLoading] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -87,6 +89,21 @@ export default function Home() {
       setResult(d); setCharacterBible([]); setCharacterRefs({}); setStarted(true);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
+  }
+
+  async function generateMultiShots() {
+    if (!result?.episode) return;
+    setError(""); setMultiShotLoading(true);
+    try {
+      const r = await fetch("/api/multi-shot", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ episode: result.episode, characterBible, shotsPerScene: 4 })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Multi-shot generation failed");
+      setMultiShots(d.shots || []);
+    } catch (e: any) { setError(e.message || "Multi-shot generation failed."); }
+    finally { setMultiShotLoading(false); }
   }
 
   async function buildCharacterBible() {
@@ -452,6 +469,7 @@ export default function Home() {
             <button className="btn" disabled={loading} onClick={generate}>{loading ? "Generating…" : started ? "Regenerate episode" : "Generate episode"}</button>
             {result?.episode?.characters?.length > 0 && <button className="btn storyboardBtn" disabled={characterLoading} onClick={buildCharacterBible}>{characterLoading ? "Locking characters…" : characterBible.length ? "👑 Character bible locked" : "👑 Build character bible"}</button>}
             {characterBible.length > 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate locked storyboard"}</button>}
+            {characterBible.length > 0 && storyboard.length > 0 && <button className="btn storyboardBtn" disabled={multiShotLoading} onClick={generateMultiShots}>{multiShotLoading ? "Directing shots…" : "🎞️ Build multi-shot scenes"}</button>}
             {result?.episode && characterBible.length === 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
             {storyboard.length > 0 && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : "🎞️ Animate storyboard"}</button>}
             {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
@@ -475,6 +493,15 @@ export default function Home() {
           <div className="characterBody"><h3>{c.name}</h3><div className="muted">{c.role} • {c.age}</div><p><b>Look:</b> {c.appearance}</p><p><b>Hair:</b> {c.hair} · <b>Eyes:</b> {c.eyes}</p><p><b>Outfit:</b> {c.outfit}</p><p><b>Palette:</b> {c.palette}</p><div className="lockBox">🔒 {c.consistency_anchor}</div>
             <button className="btn storyboardBtn" disabled={characterRefLoading === c.id} onClick={() => generateCharacterReference(c)}>{characterRefLoading === c.id ? "Generating reference…" : characterRefs[c.id] ? "Regenerate reference" : "🎨 Generate reference sheet"}</button>
           </div>
+        </article>)}</div>
+      </section>
+
+      {multiShots.length > 0 && <section className="card multiShotCard">
+        <div className="resultHeader"><div><div className="badge">🎞️ MULTI-SHOT DIRECTOR</div><h2>{multiShots.length} cinematic shots</h2><p className="muted">Each scene is broken into establishing, character, reaction/action and closing shots.</p></div><div className="modePill">4 SHOTS / SCENE</div></div>
+        <div className="multiShotGrid">{multiShots.map((s: any) => <article className="shotCard" key={s.id}>
+          <img src={s.imageUrl} alt={s.title} />
+          <div className="shotInfo"><b>Shot {s.shotInScene}</b><span>Scene {s.sceneNumber}</span><strong>{s.camera}</strong><small>{s.duration.toFixed(1)}s</small></div>
+          {s.dialogue && <p className="shotDialogue">“{s.dialogue}”</p>}
         </article>)}</div>
       </section>
 
