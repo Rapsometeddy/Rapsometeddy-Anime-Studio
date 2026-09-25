@@ -354,7 +354,10 @@ export default function Home() {
       {motion?.shots?.length > 0 && (
         <section className="card exportCard">
           <div className="resultHeader"><div><div className="badge">VIDEO EXPORT</div><h2>Render episode</h2><p className="muted">Create a real video file from the storyboard motion plan directly in your browser.</p></div><div className="modePill">WEBM</div></div>
-          <button className="btn" disabled={exporting} onClick={exportVideo}>{exporting ? `Rendering ${exportProgress}%…` : "⬇️ Export animated video"}</button>
+          <div className="exportButtons">
+  <button className="btn" disabled={exporting} onClick={exportVideo}>{exporting ? `Rendering ${exportProgress}%…` : "⬇️ Export WebM"}</button>
+  <button className="btn secondary" disabled={exporting} onClick={exportMp4}>🎬 Export MP4</button>
+</div>
           <div className="progress"><div className="progressBar" style={{width: `${exportProgress}%`}} /></div>
           <div className="muted">The export currently renders video only. Your song/audio is kept for the later audio-mix stage.</div>
         </section>
