@@ -54,6 +54,8 @@ export default function Home() {
   const [autoEditLoading, setAutoEditLoading] = useState(false);
   const [youtubePackage, setYoutubePackage] = useState<any>(null);
   const [youtubeLoading, setYoutubeLoading] = useState(false);
+  const [thumbnail, setThumbnail] = useState<any>(null);
+  const [thumbnailLoading, setThumbnailLoading] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -224,6 +226,31 @@ export default function Home() {
     a.download = `${title || "rapsometeddy-anime"}-youtube-package.json`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 3000);
+  }
+
+  async function generateThumbnail() {
+    if (!result?.episode) return;
+    setError(""); setThumbnailLoading(true);
+    try {
+      const character = characterBible[0] || result.episode.characters?.[0] || {};
+      const r = await fetch("/api/thumbnail", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: result.episode.title || title, episode: result.episode, character })
+      });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Thumbnail generation failed");
+      setThumbnail(d);
+    } catch (e: any) { setError(e.message || "Thumbnail generation failed."); }
+    finally { setThumbnailLoading(false); }
+  }
+
+  function downloadThumbnail() {
+    if (!thumbnail?.imageUrl) return;
+    const a = document.createElement("a");
+    a.href = thumbnail.imageUrl;
+    a.target = "_blank";
+    a.rel = "noreferrer";
+    a.click();
   }
 
   function speakScene(scene?: any) {
@@ -493,7 +520,7 @@ export default function Home() {
   function clearAll() {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setTitle(""); setStory(""); setSong(""); setStarted(false);
-    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null); setYoutubePackage(null);
+    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null); setYoutubePackage(null); setThumbnail(null);
     setError(""); setAudioFile(null); setAudioUrl("");
   }
 
@@ -526,7 +553,7 @@ export default function Home() {
             {result?.episode && characterBible.length === 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
             {(storyboard.length > 0 || multiShots.length > 0) && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : multiShots.length ? "🎞️ Animate multi-shot scenes" : "🎞️ Animate storyboard"}</button>}
             {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={autoEditLoading} onClick={runAutoEdit}>{autoEditLoading ? "Editing episode…" : "🎬 Auto Edit Episode"}</button>}
-            {autoEdit && <button className="btn storyboardBtn" disabled={youtubeLoading} onClick={buildYoutubePackage}>{youtubeLoading ? "Preparing YouTube package…" : "📺 Build YouTube package"}</button>}\n            {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
+            {autoEdit && <button className="btn storyboardBtn" disabled={thumbnailLoading} onClick={generateThumbnail}>{thumbnailLoading ? "Generating thumbnail…" : "🖼️ Generate thumbnail"}</button>}\n            {autoEdit && <button className="btn storyboardBtn" disabled={youtubeLoading} onClick={buildYoutubePackage}>{youtubeLoading ? "Preparing YouTube package…" : "📺 Build YouTube package"}</button>}\n            {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
             {error && <div className="error">{error}</div>}
             <button className="btn secondary" onClick={clearAll}>Clear</button>
           </div>
@@ -567,6 +594,13 @@ export default function Home() {
         <div className="resultHeader"><div><div className="badge">🎬 AUTO EDIT ENGINE</div><h2>Episode cut assembled</h2><p className="muted">{autoEdit.totalDuration}s final runtime • {autoEdit.edits?.length || 0} shots • dialogue-aware music mix</p></div><div className="modePill">READY</div></div>
         <div className="editTimeline">{(autoEdit.edits || []).map((e: any) => <article className="editRow" key={e.order}><span className="editIndex">{String(e.order).padStart(2,"0")}</span><div><b>{e.title}</b><div className="muted">{formatTime(e.start)} → {formatTime(e.start + e.duration)} • {e.motion}</div></div><span className="editMix">{e.musicDuck ? "🎙️ MUSIC DUCK" : "🎵 FULL MUSIC"}</span></article>)}</div>
         <div className="notice">🎵 Original music: {autoEdit.audioMix?.music}. During dialogue, the planned music level drops to {Math.round((autoEdit.audioMix?.dialogueMusicGain || 0.35) * 100)}%.</div>
+      </section>
+
+      {thumbnail && <section className="card thumbnailCard">
+        <div className="resultHeader"><div><div className="badge">🖼️ THUMBNAIL STUDIO</div><h2>Episode thumbnail</h2><p className="muted">AI-generated 16:9 artwork using the Rapsometeddy visual identity.</p></div><div className="modePill">FLUX</div></div>
+        <div className="thumbnailPreview"><img src={thumbnail.imageUrl} alt={thumbnail.title + " thumbnail"} /></div>
+        <div className="ytBlock"><b>Generation prompt</b><div className="copyBox">{thumbnail.prompt}</div></div>
+        <div className="motionControls"><button className="btn" onClick={generateThumbnail}>🔄 Regenerate</button><button className="btn secondary" onClick={downloadThumbnail}>🖼️ Open full thumbnail</button></div>
       </section>
 
       {youtubePackage && <section className="card youtubeCard">
