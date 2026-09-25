@@ -35,6 +35,10 @@ export default function Home() {
   const [ffmpegLoading, setFfmpegLoading] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState("");
+  const [voiceName, setVoiceName] = useState("");
+  const [voiceRate, setVoiceRate] = useState(1);
+  const [voicePitch, setVoicePitch] = useState(1);
+  const [speaking, setSpeaking] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -45,6 +49,16 @@ export default function Home() {
     }, Math.max(1, Number(shot.duration) || 8) * 1000);
     return () => window.clearTimeout(timer);
   }, [playing, activeShot, motion]);
+
+  const [voices, setVoices] = useState<SpeechSynthesisVoice[]>([]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
+    const loadVoices = () => setVoices(window.speechSynthesis.getVoices());
+    loadVoices();
+    window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
+    return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  }, []);
 
   const totalDuration = useMemo(
     () => timeline.reduce((sum, s) => sum + (Number(s.duration) || 0), 0),
@@ -109,6 +123,30 @@ export default function Home() {
       setTimeline(d.timeline || []);
     } catch (e: any) { setError(e.message); }
     finally { setTimelineLoading(false); }
+  }
+
+  function speakScene(scene?: any) {
+    if (typeof window === "undefined" || !("speechSynthesis" in window)) {
+      setError("Speech synthesis is not available in this browser.");
+      return;
+    }
+    const text = String(scene?.subtitle || scene?.dialogue || "").trim();
+    if (!text) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    const selected = voices.find(v => v.name === voiceName);
+    if (selected) utterance.voice = selected;
+    utterance.rate = voiceRate;
+    utterance.pitch = voicePitch;
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopVoice() {
+    if (typeof window !== "undefined" && "speechSynthesis" in window) window.speechSynthesis.cancel();
+    setSpeaking(false);
   }
 
   function selectAudio(file: File | null) {
@@ -306,6 +344,17 @@ export default function Home() {
       {storyboard.length > 0 && <section className="card storyboard"><div className="resultHeader"><div><div className="badge">VISUAL STORYBOARD</div><h2>{result?.episode?.title || "Episode storyboard"}</h2><p className="muted">Cinematic frames become the visual base for motion, dialogue and subtitles.</p></div><div className="modePill">{storyboard.length} frames</div></div><div className="storyboardGrid">{storyboard.map((frame: any) => <article className="frameCard" key={frame.number}><div className="frameImageWrap"><img src={frame.imageUrl} alt={`Storyboard frame ${frame.number}: ${frame.title}`} className="frameImage" loading="lazy" /><span className="frameNumber">{String(frame.number).padStart(2, "0")}</span></div><div className="frameBody"><h3>{frame.title}</h3><div className="muted">{frame.duration}s • cinematic 16:9</div>{frame.dialogue && <p>{frame.dialogue}</p>}</div></article>)}</div></section>}
 
       {motion?.shots?.length > 0 && <section className="card motionStudio"><div className="resultHeader"><div><div className="badge">MOTION PREVIEW</div><h2>Anime scene player</h2><p className="muted">{motion.totalDuration}s planned runtime • {motion.shots.length} shots</p></div><div className="modePill">{playing ? "PLAYING" : "READY"}</div></div><div className="motionStage"><img src={motion.shots[activeShot].imageUrl} alt={motion.shots[activeShot].title} className={`motionImage ${String(motion.shots[activeShot].motion || "").replaceAll(" ", "-")}`} /><div className="motionOverlay"><b>{String(motion.shots[activeShot].number).padStart(2,"0")} · {motion.shots[activeShot].title}</b><span>{motion.shots[activeShot].motion} • {motion.shots[activeShot].transition}</span></div></div><div className="motionControls"><button className="btn" onClick={() => setPlaying(v => !v)}>{playing ? "⏸ Pause" : "▶ Play"}</button><button className="btn secondary" onClick={() => setActiveShot(n => n >= motion.shots.length - 1 ? 0 : n + 1)}>Next shot →</button></div><div className="shotStrip">{motion.shots.map((shot: any, i: number) => <button key={shot.number} className={`shotChip ${i === activeShot ? "active" : ""}`} onClick={() => {setActiveShot(i);setPlaying(false)}}>{String(shot.number).padStart(2,"0")}</button>)}</div></section>}
+
+      {timeline.length > 0 && <section className="card voiceCard">
+        <div className="resultHeader"><div><div className="badge">VOICE LAB • FREE</div><h2>Dialogue voice preview</h2><p className="muted">Uses your device/browser speech engine, so no paid voice API is required. This is a preview layer; the final voice recording can be replaced later.</p></div><div className="modePill">{voices.length} voices</div></div>
+        <div className="form">
+          <div><div className="label">Voice</div><select className="input" value={voiceName} onChange={e => setVoiceName(e.target.value)}><option value="">Default device voice</option>{voices.map(v => <option key={v.name + v.lang} value={v.name}>{v.name} · {v.lang}</option>)}</select></div>
+          <div><div className="label">Rate: {voiceRate.toFixed(1)}</div><input type="range" min="0.6" max="1.4" step="0.1" value={voiceRate} onChange={e => setVoiceRate(Number(e.target.value))} /></div>
+          <div><div className="label">Pitch: {voicePitch.toFixed(1)}</div><input type="range" min="0.6" max="1.4" step="0.1" value={voicePitch} onChange={e => setVoicePitch(Number(e.target.value))} /></div>
+          <div className="motionControls"><button className="btn" disabled={speaking || !timeline[0]?.subtitle} onClick={() => speakScene(timeline[0])}>{speaking ? "🔊 Speaking…" : "🔊 Test first dialogue"}</button><button className="btn secondary" onClick={stopVoice}>⏹ Stop</button></div>
+        </div>
+        <div className="timeline">{timeline.map((s: any) => <article className="timelineRow" key={s.number}><div className="timecode">{formatTime(s.start)}–{formatTime(s.start + s.duration)}</div><div className="timelineMain"><b>Scene {s.number} · {s.title}</b><div className="subtitleBox">{s.subtitle || "No dialogue"}</div>{s.subtitle && <button className="btn secondary" onClick={() => speakScene(s)}>🔊 Preview voice</button>}</div></article>)}</div>
+      </section>}
 
       {timeline.length > 0 && <section className="card timelineCard"><div className="resultHeader"><div><div className="badge">DIALOGUE + SUBTITLES</div><h2>Episode timeline</h2><p className="muted">{totalDuration}s • subtitles will be burned into the rendered video.</p></div><div className="modePill">READY</div></div><div className="timeline">{timeline.map((s: any) => <article className="timelineRow" key={s.number}><div className="timecode">{formatTime(s.start)}–{formatTime(s.start + s.duration)}</div><div className="timelineMain"><b>Scene {s.number} · {s.title}</b><div className="muted">{s.duration}s • {s.motion}</div><div className="subtitleBox">{s.subtitle || "No dialogue — instrumental/visual scene"}</div></div></article>)}</div></section>}
 
