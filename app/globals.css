@@ -11,3 +11,12 @@
 .characterBody p{margin:9px 0;line-height:1.45}
 .lockBox{margin:12px 0;padding:11px 12px;border-radius:12px;background:rgba(168,85,247,.09);border:1px solid rgba(168,85,247,.2);font-size:13px;line-height:1.45;color:#ddd3ea}
 @media(max-width:760px){.characterPanel{grid-template-columns:1fr}.characterRefWrap,.characterRef,.characterPlaceholder{min-height:220px}}
+
+.multiShotGrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}
+.shotCard{overflow:hidden;border:1px solid rgba(168,85,247,.2);border-radius:16px;background:rgba(255,255,255,.025)}
+.shotCard img{display:block;width:100%;aspect-ratio:16/9;object-fit:cover}
+.shotInfo{display:grid;grid-template-columns:auto auto;gap:5px 10px;padding:12px 13px}
+.shotInfo strong{grid-column:1/-1}
+.shotInfo small{color:#9b93a8}
+.shotDialogue{margin:0;padding:0 13px 13px;color:#d9d0e3}
+@media(max-width:700px){.multiShotGrid{grid-template-columns:1fr}}
