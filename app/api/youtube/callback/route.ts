@@ -51,6 +51,22 @@ export async function GET(req: Request) {
       maxAge: 3600,
       path: "/"
     });
+    response.cookies.set("youtube_access_token", tokens.access_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      maxAge: Math.max(300, Number(tokens.expires_in || 3600)),
+      path: "/"
+    });
+    if (tokens.refresh_token) {
+      response.cookies.set("youtube_refresh_token", tokens.refresh_token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "lax",
+        maxAge: 60 * 60 * 24 * 30,
+        path: "/"
+      });
+    }
   }
   return response;
 }
