@@ -292,6 +292,7 @@ export default function Home() {
 
   async function buildWebmBlob(): Promise<Blob> {
     if (!motion?.shots?.length) throw new Error("Generate motion scenes first.");
+    const editPlan = autoEdit?.edits || [];
     const canvas = document.createElement("canvas");
     canvas.width = 1280; canvas.height = 720;
     const ctx = canvas.getContext("2d");
@@ -302,6 +303,8 @@ export default function Home() {
     const voiceDestination = new (window.AudioContext || (window as any).webkitAudioContext)().createMediaStreamDestination();
     const voiceAudioContext = voiceDestination.context;
     let audio: HTMLAudioElement | null = null;
+    let musicGainNode: GainNode | null = null;
+    let musicAudioContext: AudioContext | null = null;
     let combined: MediaStream = videoStream;
     const voicePlayers: HTMLAudioElement[] = [];
     Object.entries(voiceClips).forEach(([sceneNumber, file]) => {
@@ -321,8 +324,12 @@ export default function Home() {
         const ac = new AudioContextClass();
         const source = ac.createMediaElementSource(audio);
         const destination = ac.createMediaStreamDestination();
-        source.connect(destination);
-        source.connect(ac.destination);
+        musicGainNode = ac.createGain();
+        musicGainNode.gain.value = 0.72;
+        source.connect(musicGainNode);
+        musicGainNode.connect(destination);
+        musicGainNode.connect(ac.destination);
+        musicAudioContext = ac;
         destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
         combined = videoStream;
         await audio.play().catch(() => {});
@@ -347,6 +354,8 @@ export default function Home() {
         img.src = shot.imageUrl;
       });
       const voiceClip = voiceClips[Number(shot.number)];
+      const edit = editPlan[i];
+      if (musicGainNode && musicAudioContext) musicGainNode.gain.setTargetAtTime(edit?.musicGain ?? 0.72, musicAudioContext.currentTime, 0.04);
       if (voiceClip) {
         const player = voicePlayers.find((a: HTMLAudioElement) => a.src.includes(encodeURIComponent(voiceClip.name)));
       }
@@ -403,6 +412,7 @@ export default function Home() {
       }
     }
 
+    if (musicGainNode && musicAudioContext) musicGainNode.gain.setTargetAtTime(0.72, musicAudioContext.currentTime, 0.04);
     audio?.pause();
     recorder.stop();
     await stopped;
