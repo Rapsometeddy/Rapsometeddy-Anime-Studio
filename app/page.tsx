@@ -39,6 +39,7 @@ export default function Home() {
   const [voiceRate, setVoiceRate] = useState(1);
   const [voicePitch, setVoicePitch] = useState(1);
   const [speaking, setSpeaking] = useState(false);
+  const [voiceExporting, setVoiceExporting] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -142,6 +143,18 @@ export default function Home() {
     utterance.onend = () => setSpeaking(false);
     utterance.onerror = () => setSpeaking(false);
     window.speechSynthesis.speak(utterance);
+  }
+
+  async function exportVoiceTrack() {
+    if (!timeline.length || voiceExporting || !("speechSynthesis" in window)) return;
+    setVoiceExporting(true); setError("");
+    try {
+      const payload = timeline.filter((s: any) => s.subtitle).map((s: any) => ({ start: s.start, duration: s.duration, text: s.subtitle }));
+      const r = await fetch("/api/voice", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ text: payload.map((x: any) => x.text).join("\n"), voice: voiceName, rate: voiceRate, pitch: voicePitch }) });
+      const d = await r.json(); if (!r.ok) throw new Error(d.error || "Voice preparation failed.");
+      const blob = new Blob([JSON.stringify({ format: "Rapsometeddy Voice Timeline", mode: d.mode, voice: voiceName || "default", rate: voiceRate, pitch: voicePitch, cues: payload }, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob); const a = document.createElement("a"); a.href = url; a.download = `${title || "rapsometeddy-anime"}-voice-timeline.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 3000);
+    } catch (e: any) { setError(e.message || "Voice export failed."); } finally { setVoiceExporting(false); }
   }
 
   function stopVoice() {
@@ -351,7 +364,7 @@ export default function Home() {
           <div><div className="label">Voice</div><select className="input" value={voiceName} onChange={e => setVoiceName(e.target.value)}><option value="">Default device voice</option>{voices.map(v => <option key={v.name + v.lang} value={v.name}>{v.name} · {v.lang}</option>)}</select></div>
           <div><div className="label">Rate: {voiceRate.toFixed(1)}</div><input type="range" min="0.6" max="1.4" step="0.1" value={voiceRate} onChange={e => setVoiceRate(Number(e.target.value))} /></div>
           <div><div className="label">Pitch: {voicePitch.toFixed(1)}</div><input type="range" min="0.6" max="1.4" step="0.1" value={voicePitch} onChange={e => setVoicePitch(Number(e.target.value))} /></div>
-          <div className="motionControls"><button className="btn" disabled={speaking || !timeline[0]?.subtitle} onClick={() => speakScene(timeline[0])}>{speaking ? "🔊 Speaking…" : "🔊 Test first dialogue"}</button><button className="btn secondary" onClick={stopVoice}>⏹ Stop</button></div>
+          <div className="motionControls"><button className="btn" disabled={speaking || !timeline[0]?.subtitle} onClick={() => speakScene(timeline[0])}>{speaking ? "🔊 Speaking…" : "🔊 Test first dialogue"}</button><button className="btn secondary" onClick={stopVoice}>⏹ Stop</button><button className="btn storyboardBtn" disabled={voiceExporting} onClick={exportVoiceTrack}>{voiceExporting ? "Preparing…" : "🎙️ Export voice timeline"}</button></div>
         </div>
         <div className="timeline">{timeline.map((s: any) => <article className="timelineRow" key={s.number}><div className="timecode">{formatTime(s.start)}–{formatTime(s.start + s.duration)}</div><div className="timelineMain"><b>Scene {s.number} · {s.title}</b><div className="subtitleBox">{s.subtitle || "No dialogue"}</div>{s.subtitle && <button className="btn secondary" onClick={() => speakScene(s)}>🔊 Preview voice</button>}</div></article>)}</div>
       </section>}
