@@ -50,6 +50,8 @@ export default function Home() {
   const [characterRefLoading, setCharacterRefLoading] = useState<string | null>(null);
   const [multiShots, setMultiShots] = useState<any[]>([]);
   const [multiShotLoading, setMultiShotLoading] = useState(false);
+  const [autoEdit, setAutoEdit] = useState<any>(null);
+  const [autoEditLoading, setAutoEditLoading] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -181,6 +183,18 @@ export default function Home() {
       setTimeline(d.timeline || []);
     } catch (e: any) { setError(e.message); }
     finally { setTimelineLoading(false); }
+  }
+
+  async function runAutoEdit() {
+    if (!motion?.shots?.length) return;
+    setError(""); setAutoEditLoading(true);
+    try {
+      const r = await fetch("/api/auto-edit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ shots: motion.shots, musicDuration: 0, introDuration: 0.5, outroDuration: 1 }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Auto edit failed");
+      setAutoEdit(d);
+    } catch (e: any) { setError(e.message || "Auto edit failed."); }
+    finally { setAutoEditLoading(false); }
   }
 
   function speakScene(scene?: any) {
@@ -440,7 +454,7 @@ export default function Home() {
   function clearAll() {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setTitle(""); setStory(""); setSong(""); setStarted(false);
-    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]);
+    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null);
     setError(""); setAudioFile(null); setAudioUrl("");
   }
 
@@ -472,6 +486,7 @@ export default function Home() {
             {characterBible.length > 0 && storyboard.length > 0 && <button className="btn storyboardBtn" disabled={multiShotLoading} onClick={generateMultiShots}>{multiShotLoading ? "Directing shots…" : "🎞️ Build multi-shot scenes"}</button>}
             {result?.episode && characterBible.length === 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
             {(storyboard.length > 0 || multiShots.length > 0) && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : multiShots.length ? "🎞️ Animate multi-shot scenes" : "🎞️ Animate storyboard"}</button>}
+            {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={autoEditLoading} onClick={runAutoEdit}>{autoEditLoading ? "Editing episode…" : "🎬 Auto Edit Episode"}</button>}
             {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
             {error && <div className="error">{error}</div>}
             <button className="btn secondary" onClick={clearAll}>Clear</button>
@@ -508,6 +523,12 @@ export default function Home() {
       {storyboard.length > 0 && <section className="card storyboard"><div className="resultHeader"><div><div className="badge">VISUAL STORYBOARD</div><h2>{result?.episode?.title || "Episode storyboard"}</h2><p className="muted">Cinematic frames become the visual base for motion, dialogue and subtitles.</p></div><div className="modePill">{storyboard.length} frames</div></div><div className="storyboardGrid">{storyboard.map((frame: any) => <article className="frameCard" key={frame.number}><div className="frameImageWrap"><img src={frame.imageUrl} alt={`Storyboard frame ${frame.number}: ${frame.title}`} className="frameImage" loading="lazy" /><span className="frameNumber">{String(frame.number).padStart(2, "0")}</span></div><div className="frameBody"><h3>{frame.title}</h3><div className="muted">{frame.duration}s • cinematic 16:9</div>{frame.dialogue && <p>{frame.dialogue}</p>}</div></article>)}</div></section>}
 
       {motion?.shots?.length > 0 && <section className="card motionStudio"><div className="resultHeader"><div><div className="badge">MOTION PREVIEW</div><h2>Anime scene player</h2><p className="muted">{motion.totalDuration}s planned runtime • {motion.shots.length} shots</p></div><div className="modePill">{playing ? "PLAYING" : "READY"}</div></div><div className="motionStage"><img src={motion.shots[activeShot].imageUrl} alt={motion.shots[activeShot].title} className={`motionImage ${String(motion.shots[activeShot].motion || "").replaceAll(" ", "-")}`} /><div className="motionOverlay"><b>{String(motion.shots[activeShot].number).padStart(2,"0")} · {motion.shots[activeShot].title}</b><span>{motion.shots[activeShot].motion} • {motion.shots[activeShot].transition}</span></div></div><div className="motionControls"><button className="btn" onClick={() => setPlaying(v => !v)}>{playing ? "⏸ Pause" : "▶ Play"}</button><button className="btn secondary" onClick={() => setActiveShot(n => n >= motion.shots.length - 1 ? 0 : n + 1)}>Next shot →</button></div><div className="shotStrip">{motion.shots.map((shot: any, i: number) => <button key={shot.number} className={`shotChip ${i === activeShot ? "active" : ""}`} onClick={() => {setActiveShot(i);setPlaying(false)}}>{String(shot.number).padStart(2,"0")}</button>)}</div></section>}
+
+      {autoEdit && <section className="card autoEditCard">
+        <div className="resultHeader"><div><div className="badge">🎬 AUTO EDIT ENGINE</div><h2>Episode cut assembled</h2><p className="muted">{autoEdit.totalDuration}s final runtime • {autoEdit.edits?.length || 0} shots • dialogue-aware music mix</p></div><div className="modePill">READY</div></div>
+        <div className="editTimeline">{(autoEdit.edits || []).map((e: any) => <article className="editRow" key={e.order}><span className="editIndex">{String(e.order).padStart(2,"0")}</span><div><b>{e.title}</b><div className="muted">{formatTime(e.start)} → {formatTime(e.start + e.duration)} • {e.motion}</div></div><span className="editMix">{e.musicDuck ? "🎙️ MUSIC DUCK" : "🎵 FULL MUSIC"}</span></article>)}</div>
+        <div className="notice">🎵 Original music: {autoEdit.audioMix?.music}. During dialogue, the planned music level drops to {Math.round((autoEdit.audioMix?.dialogueMusicGain || 0.35) * 100)}%.</div>
+      </section>
 
       {timeline.length > 0 && <section className="card voiceCard">
         <div className="resultHeader"><div><div className="badge">VOICE LAB • FREE</div><h2>Dialogue voice preview</h2><p className="muted">Uses your device/browser speech engine, so no paid voice API is required. This is a preview layer; the final voice recording can be replaced later.</p></div><div className="modePill">{voices.length} voices</div></div>
