@@ -56,6 +56,9 @@ export default function Home() {
   const [youtubeLoading, setYoutubeLoading] = useState(false);
   const [thumbnail, setThumbnail] = useState<any>(null);
   const [thumbnailLoading, setThumbnailLoading] = useState(false);
+  const [workflowStatus, setWorkflowStatus] = useState("draft");
+  const [workflowLoading, setWorkflowLoading] = useState(false);
+  const [workflowMessage, setWorkflowMessage] = useState("");
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -251,6 +254,18 @@ export default function Home() {
     a.target = "_blank";
     a.rel = "noreferrer";
     a.click();
+  }
+
+  async function workflowAction(action: string) {
+    setWorkflowLoading(true); setWorkflowMessage("");
+    try {
+      const r = await fetch("/api/workflow", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, status: workflowStatus }) });
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.error || "Workflow action failed.");
+      setWorkflowStatus(d.status);
+      setWorkflowMessage(d.published ? "Episode marked published. Connect a platform publisher later to perform an external upload." : `Status changed to ${d.status}.`);
+    } catch (e: any) { setError(e.message || "Workflow action failed."); }
+    finally { setWorkflowLoading(false); }
   }
 
   function speakScene(scene?: any) {
@@ -520,7 +535,7 @@ export default function Home() {
   function clearAll() {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setTitle(""); setStory(""); setSong(""); setStarted(false);
-    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null); setYoutubePackage(null); setThumbnail(null);
+    setResult(null); setStoryboard([]); setMotion(null); setTimeline([]); setMultiShots([]); setAutoEdit(null); setYoutubePackage(null); setThumbnail(null); setWorkflowStatus("draft"); setWorkflowMessage("");
     setError(""); setAudioFile(null); setAudioUrl("");
   }
 
@@ -566,6 +581,18 @@ export default function Home() {
       </div>
 
       {result && <section className="card result"><div className="resultHeader"><div><div className="badge">EPISODE BLUEPRINT</div><h2>{result.episode?.title}</h2><p className="muted">{result.episode?.logline}</p></div>{result.mode && <div className="modePill">{result.mode}</div>}</div>{result.notice && <div className="notice">{result.notice}</div>}<h3>Scenes</h3>{(result.episode?.scenes || []).map((s: any) => <div className="scene" key={s.number}><b>{s.number}. {s.title}</b><div className="muted">{s.prompt}</div>{s.dialogue && <p>{s.dialogue}</p>}</div>)}</section>}
+
+      {result && <section className="card workflowCard">
+        <div className="resultHeader"><div><div className="badge">🚦 EPISODE WORKFLOW</div><h2>Preview → Approve → Publish</h2><p className="muted">Keep publishing under your control. The app only advances the episode when you approve it.</p></div><div className="modePill">{workflowStatus.toUpperCase()}</div></div>
+        <div className="workflowSteps"><span className={workflowStatus === "draft" ? "active" : ""}>1. Draft</span><span className={workflowStatus === "review" ? "active" : ""}>2. Review</span><span className={workflowStatus === "approved" ? "active" : ""}>3. Approved</span><span className={workflowStatus === "published" ? "active" : ""}>4. Published</span></div>
+        <div className="motionControls">
+          {workflowStatus === "draft" && <button className="btn" disabled={workflowLoading} onClick={() => workflowAction("submit")}>👀 Submit for review</button>}
+          {workflowStatus === "review" && <><button className="btn" disabled={workflowLoading} onClick={() => workflowAction("approve")}>✅ Approve episode</button><button className="btn secondary" disabled={workflowLoading} onClick={() => workflowAction("reject")}>↩️ Send back to draft</button></>}
+          {workflowStatus === "approved" && <><button className="btn storyboardBtn" disabled={workflowLoading} onClick={() => workflowAction("publish")}>🚀 Mark as published</button><button className="btn secondary" disabled={workflowLoading} onClick={() => workflowAction("reject")}>↩️ Reopen draft</button></>}
+          {workflowStatus === "published" && <span className="notice">🚀 Published state recorded. External YouTube upload is intentionally not automatic yet.</span>}
+        </div>
+        {workflowMessage && <div className="notice">{workflowMessage}</div>}
+      </section>
 
       {characterBible.length > 0 && <section className="card characterCard">
         <div className="resultHeader"><div><div className="badge">👑 CHARACTER CONSISTENCY ENGINE</div><h2>Character Bible</h2><p className="muted">These visual locks are reused in storyboard prompts so the cast stays consistent from scene to scene.</p></div><div className="modePill">LOCKED</div></div>
