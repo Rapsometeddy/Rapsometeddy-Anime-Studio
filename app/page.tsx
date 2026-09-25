@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { FFmpeg } from "@ffmpeg/ffmpeg";
+import { fetchFile, toBlobURL } from "@ffmpeg/util";
 
 const steps = [
   "Story & script",
@@ -28,6 +30,8 @@ export default function Home() {
   const [activeShot, setActiveShot] = useState(0);
   const [exporting, setExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [ffmpegReady, setFfmpegReady] = useState(false);
+  const [ffmpegLoading, setFfmpegLoading] = useState(false);
   const [audioFile, setAudioFile] = useState<File | null>(null);
   const [audioUrl, setAudioUrl] = useState("");
 
@@ -102,108 +106,43 @@ export default function Home() {
     setAudioUrl(file ? URL.createObjectURL(file) : "");
   }
 
-  async function exportMp4() {
-    if (!motion?.shots?.length || exporting) return;
-    setError("");
-    setExporting(true);
-    setExportProgress(0);
+  async function convertWebmToMp4(webmBlob: Blob) {
+    const ffmpeg = new FFmpeg();
+    const base = "https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd";
+    setFfmpegLoading(true);
     try {
-      const canvas = document.createElement("canvas");
-      canvas.width = 1280; canvas.height = 720;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) throw new Error("Canvas is not supported on this device.");
-      const stream = canvas.captureStream(30);
-      const mime = MediaRecorder.isTypeSupported("video/mp4") ? "video/mp4" : "";
-      if (!mime) throw new Error("This browser does not support direct MP4 recording. Use the WebM export, then convert it with an FFmpeg-enabled renderer.");
-      const recorder = new MediaRecorder(stream, { mimeType: mime });
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-      const stopped = new Promise<void>(resolve => { recorder.onstop = () => resolve(); });
-      recorder.start(250);
-      for (let i = 0; i < motion.shots.length; i++) {
-        const shot = motion.shots[i];
-        const img = new Image(); img.crossOrigin = "anonymous";
-        await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error("Could not load storyboard frame.")); img.src = shot.imageUrl; });
-        const start = performance.now();
-        const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
-        while (performance.now() - start < duration) {
-          const p = Math.min(1, (performance.now() - start) / duration);
-          const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11 : shot.motion === "slow zoom out" ? 1.13 - p * .11 : 1.08;
-          const pan = shot.motion === "pan right" ? (-.02 + p * .04) : 0;
-          const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
-          const w = img.width * scale, h = img.height * scale;
-          ctx.fillStyle = "#08060f"; ctx.fillRect(0,0,canvas.width,canvas.height);
-          ctx.drawImage(img, (canvas.width-w)/2 + pan*canvas.width, (canvas.height-h)/2, w, h);
-          setExportProgress(Math.round(((i + p) / motion.shots.length) * 100));
-          await new Promise(r => requestAnimationFrame(r));
-        }
-      }
-      recorder.stop(); await stopped;
-      const blob = new Blob(chunks, { type: mime });
+      await ffmpeg.load({
+        coreURL: await toBlobURL(`${base}/ffmpeg-core.js`, "text/javascript"),
+        wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm")
+      });
+      setFfmpegReady(true);
+      await ffmpeg.writeFile("input.webm", await fetchFile(webmBlob));
+      await ffmpeg.exec(["-i", "input.webm", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", "output.mp4"]);
+      const data = await ffmpeg.readFile("output.mp4");
+      const blob = new Blob([data as Uint8Array], { type: "video/mp4" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = `${title || "rapsometeddy-anime"}.mp4`; a.click();
+      const a = document.createElement("a");
+      a.href = url; a.download = `${title || "rapsometeddy-anime"}.mp4`; a.click();
       setTimeout(() => URL.revokeObjectURL(url), 5000);
-      setExportProgress(100);
-    } catch (e: any) { setError(e.message || "MP4 export failed."); }
-    finally { setExporting(false); }
+    } finally {
+      await ffmpeg.deleteFile("input.webm").catch(() => {});
+      await ffmpeg.deleteFile("output.mp4").catch(() => {});
+      ffmpeg.terminate();
+      setFfmpegLoading(false);
+    }
   }
 
-  async function buildWebmBlob() {
-    if (!motion?.shots?.length) throw new Error("Generate the storyboard and motion plan first.");
-    const canvas = document.createElement("canvas");
-    canvas.width = 1280; canvas.height = 720;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) throw new Error("Canvas is not supported on this device.");
-    const videoStream = canvas.captureStream(30);
-    let combined: MediaStream = videoStream;
-    let audio: HTMLAudioElement | null = null;
-    if (audioUrl) {
-      audio = new Audio(audioUrl);
-      const audioStream = (audio as any).captureStream?.() || (audio as any).mozCaptureStream?.();
-      if (audioStream) combined = new MediaStream([...videoStream.getVideoTracks(), ...audioStream.getAudioTracks()]);
-    }
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
-    const recorder = new MediaRecorder(combined, { mimeType: mime });
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    const stopped = new Promise<void>(resolve => { recorder.onstop = () => resolve(); });
-    recorder.start(250);
-    if (audio) await audio.play();
-    for (let i = 0; i < motion.shots.length; i++) {
-      const shot = motion.shots[i];
-      const img = new Image(); img.crossOrigin = "anonymous";
-      await new Promise<void>((resolve, reject) => { img.onload = () => resolve(); img.onerror = () => reject(new Error("Could not load storyboard frame.")); img.src = shot.imageUrl; });
-      const startedAt = performance.now();
-      const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
-      while (performance.now() - startedAt < duration) {
-        const p = Math.min(1, (performance.now() - startedAt) / duration);
-        const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11 : shot.motion === "slow zoom out" ? 1.13 - p * .11 : 1.08;
-        const pan = shot.motion === "pan right" ? (-.02 + p * .04) : 0;
-        const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
-        const w = img.width * scale, h = img.height * scale;
-        ctx.fillStyle = "#08060f"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, (canvas.width - w) / 2 + pan * canvas.width, (canvas.height - h) / 2, w, h);
-        ctx.fillStyle = "rgba(8,6,15,.35)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.fillStyle = "white"; ctx.font = "700 28px Arial"; ctx.fillText(shot.title || `Scene ${i + 1}`, 42, 58);
-        setExportProgress(Math.round(((i + p) / motion.shots.length) * 100));
-        await new Promise(r => requestAnimationFrame(r));
-      }
-    }
-    if (audio) audio.pause();
-    recorder.stop(); await stopped;
-    return new Blob(chunks, { type: "video/webm" });
-  }
-
-  async function exportVideo() {
+  async function exportMp4() {
     if (exporting) return;
     setError(""); setExporting(true); setExportProgress(0);
     try {
-      const blob = await buildWebmBlob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = `${title || "rapsometeddy-anime"}.webm`; a.click();
-      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      const webm = await buildWebmBlob();
+      await convertWebmToMp4(webm);
       setExportProgress(100);
-    } catch (e: any) { setError(e.message || "Video export failed."); }
-    finally { setExporting(false); }
+    } catch (e: any) {
+      setError(e.message || "MP4 export failed.");
+    } finally {
+      setExporting(false);
+    }
   }
 
