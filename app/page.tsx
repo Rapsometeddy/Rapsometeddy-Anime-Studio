@@ -154,12 +154,12 @@ export default function Home() {
   }
 
   async function generateMotion() {
-    if (!storyboard.length) return;
+    if (!storyboard.length && !multiShots.length) return;
     setError(""); setMotionLoading(true);
     try {
       const r = await fetch("/api/motion-plan", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ storyboard })
+        body: JSON.stringify({ storyboard, multiShots })
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Motion planning failed");
@@ -471,7 +471,7 @@ export default function Home() {
             {characterBible.length > 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate locked storyboard"}</button>}
             {characterBible.length > 0 && storyboard.length > 0 && <button className="btn storyboardBtn" disabled={multiShotLoading} onClick={generateMultiShots}>{multiShotLoading ? "Directing shots…" : "🎞️ Build multi-shot scenes"}</button>}
             {result?.episode && characterBible.length === 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
-            {storyboard.length > 0 && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : "🎞️ Animate storyboard"}</button>}
+            {(storyboard.length > 0 || multiShots.length > 0) && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : multiShots.length ? "🎞️ Animate multi-shot scenes" : "🎞️ Animate storyboard"}</button>}
             {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
             {error && <div className="error">{error}</div>}
             <button className="btn secondary" onClick={clearAll}>Clear</button>
