@@ -524,7 +524,21 @@ export default function Home() {
     });
     voiceDestination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
 
-    if (generatedVoice && !audioUrl) {\n      const voiceAudio = new Audio(URL.createObjectURL(generatedVoice));\n      voiceAudio.loop = false;\n      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;\n      if (AudioContextClass) {\n        const ac = new AudioContextClass();\n        const source = ac.createMediaElementSource(voiceAudio);\n        const destination = ac.createMediaStreamDestination();\n        source.connect(destination); source.connect(ac.destination);\n        destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));\n        combined = videoStream;\n        await voiceAudio.play().catch(() => {});\n      }\n    }\n\n    if (audioUrl) {
+    if (generatedVoice && !audioUrl) {
+      const voiceAudio = new Audio(URL.createObjectURL(generatedVoice));
+      voiceAudio.loop = false;
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioContextClass) {
+        const ac = new AudioContextClass();
+        const source = ac.createMediaElementSource(voiceAudio);
+        const destination = ac.createMediaStreamDestination();
+        source.connect(destination);
+        source.connect(ac.destination);
+        destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
+        combined = videoStream;
+        await voiceAudio.play().catch(() => {});
+      }
+    }\n\n    if (audioUrl) {
       audio = new Audio(audioUrl);
       audio.crossOrigin = "anonymous";
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
