@@ -27,7 +27,7 @@ export default function Home() {
   const [playing, setPlaying] = useState(false);
   const [activeShot, setActiveShot] = useState(0);
   const [exporting, setExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
+  const [exportProgress, setExportProgress] = useState(0);\n  const [audioFile, setAudioFile] = useState<File | null>(null);\n  const [audioUrl, setAudioUrl] = useState("");
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -95,7 +95,7 @@ export default function Home() {
     finally { setMotionLoading(false); }
   }
 
-  async function exportVideo() {
+  function selectAudio(file: File | null) {\n    setAudioFile(file);\n    setAudioUrl(file ? URL.createObjectURL(file) : "");\n  }\n\n  async function exportVideo() {
     if (!motion?.shots?.length || exporting) return;
     setError("");
     setExporting(true);
@@ -107,7 +107,7 @@ export default function Home() {
       if (!ctx) throw new Error("Canvas is not supported on this device.");
       const stream = canvas.captureStream(30);
       const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9") ? "video/webm;codecs=vp9" : "video/webm";
-      const recorder = new MediaRecorder(stream, { mimeType: mime });
+      const recorder = new MediaRecorder(combined, { mimeType: mime });
       const chunks: Blob[] = [];
       recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
       const stopped = new Promise<void>(resolve => { recorder.onstop = () => resolve(); });
@@ -132,7 +132,7 @@ export default function Home() {
           await new Promise(r => requestAnimationFrame(r));
         }
       }
-      recorder.stop(); await stopped;
+      if (audio) audio.pause();\n      recorder.stop(); await stopped;
       const blob = new Blob(chunks, { type: mime });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a"); a.href = url; a.download = `${title || "rapsometeddy-anime"}.webm`; a.click();
