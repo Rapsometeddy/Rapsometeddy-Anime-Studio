@@ -41,6 +41,9 @@ export default function Home() {
   const [speaking, setSpeaking] = useState(false);
   const [voiceExporting, setVoiceExporting] = useState(false);
   const [voiceTrackUrl, setVoiceTrackUrl] = useState("");
+  const [voiceClips, setVoiceClips] = useState<Record<number, File>>({});
+  const [recordingScene, setRecordingScene] = useState<number | null>(null);
+  const [recorder, setRecorder] = useState<MediaRecorder | null>(null);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -163,6 +166,38 @@ export default function Home() {
     setSpeaking(false);
   }
 
+  function selectVoiceClip(sceneNumber: number, file: File | null) {
+    setVoiceClips(prev => {
+      const next = { ...prev };
+      if (file) next[sceneNumber] = file; else delete next[sceneNumber];
+      return next;
+    });
+  }
+
+  async function recordDialogue(scene: any) {
+    if (recordingScene !== null) return;
+    if (!navigator.mediaDevices?.getUserMedia) { setError("Microphone recording is not available in this browser."); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const chunks: Blob[] = [];
+      const mr = new MediaRecorder(stream);
+      setRecorder(mr); setRecordingScene(scene.number);
+      mr.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      mr.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        const blob = new Blob(chunks, { type: mr.mimeType || "audio/webm" });
+        const file = new File([blob], `scene-${scene.number}-dialogue.webm`, { type: blob.type });
+        selectVoiceClip(scene.number, file);
+        setRecorder(null); setRecordingScene(null);
+      };
+      mr.start();
+    } catch (e: any) { setError(e.message || "Microphone permission was denied."); setRecordingScene(null); }
+  }
+
+  function stopDialogueRecording() {
+    recorder?.stop();
+  }
+
   function selectAudio(file: File | null) {
     if (audioUrl) URL.revokeObjectURL(audioUrl);
     setAudioFile(file);
@@ -197,8 +232,19 @@ export default function Home() {
 
     const videoStream = canvas.captureStream(30);
     const generatedVoice = await buildVoiceAudioTrack();
+    const voiceDestination = new (window.AudioContext || (window as any).webkitAudioContext)().createMediaStreamDestination();
+    const voiceAudioContext = voiceDestination.context;
     let audio: HTMLAudioElement | null = null;
     let combined: MediaStream = videoStream;
+    const voicePlayers: HTMLAudioElement[] = [];
+    Object.entries(voiceClips).forEach(([sceneNumber, file]) => {
+      const audio = new Audio(URL.createObjectURL(file));
+      audio.preload = "auto";
+      const source = voiceAudioContext.createMediaElementSource(audio);
+      source.connect(voiceDestination); source.connect(voiceAudioContext.destination);
+      voicePlayers.push(audio);
+    });
+    voiceDestination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
 
     if (generatedVoice && !audioUrl) {\n      const voiceAudio = new Audio(URL.createObjectURL(generatedVoice));\n      voiceAudio.loop = false;\n      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;\n      if (AudioContextClass) {\n        const ac = new AudioContextClass();\n        const source = ac.createMediaElementSource(voiceAudio);\n        const destination = ac.createMediaStreamDestination();\n        source.connect(destination); source.connect(ac.destination);\n        destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));\n        combined = videoStream;\n        await voiceAudio.play().catch(() => {});\n      }\n    }\n\n    if (audioUrl) {
       audio = new Audio(audioUrl);
@@ -233,9 +279,18 @@ export default function Home() {
         img.onerror = () => reject(new Error("Could not load storyboard frame. Check the image provider/CORS."));
         img.src = shot.imageUrl;
       });
+      const voiceClip = voiceClips[Number(shot.number)];
+      if (voiceClip) {
+        const player = voicePlayers.find((a: HTMLAudioElement) => a.src.includes(encodeURIComponent(voiceClip.name)));
+      }
       const start = performance.now();
       const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
       const subtitle = timeline[i]?.subtitle || shot.dialogue || "";
+      if (voiceClip) {
+        const idx = Object.keys(voiceClips).findIndex(k => Number(k) === Number(shot.number));
+        const player = voicePlayers[idx];
+        if (player) { player.currentTime = 0; await player.play().catch(() => {}); }
+      }
       while (performance.now() - start < duration) {
         const p = Math.min(1, (performance.now() - start) / duration);
         const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11
@@ -387,7 +442,9 @@ export default function Home() {
           <div><div className="label">Pitch: {voicePitch.toFixed(1)}</div><input type="range" min="0.6" max="1.4" step="0.1" value={voicePitch} onChange={e => setVoicePitch(Number(e.target.value))} /></div>
           <div className="motionControls"><button className="btn" disabled={speaking || !timeline[0]?.subtitle} onClick={() => speakScene(timeline[0])}>{speaking ? "🔊 Speaking…" : "🔊 Test first dialogue"}</button><button className="btn secondary" onClick={stopVoice}>⏹ Stop</button><button className="btn storyboardBtn" disabled={voiceExporting} onClick={exportVoiceTrack}>{voiceExporting ? "Preparing…" : "🎙️ Export voice timeline"}</button></div>
         </div>
-        <div className="timeline">{timeline.map((s: any) => <article className="timelineRow" key={s.number}><div className="timecode">{formatTime(s.start)}–{formatTime(s.start + s.duration)}</div><div className="timelineMain"><b>Scene {s.number} · {s.title}</b><div className="subtitleBox">{s.subtitle || "No dialogue"}</div>{s.subtitle && <button className="btn secondary" onClick={() => speakScene(s)}>🔊 Preview voice</button>}</div></article>)}</div>
+        <div className="timeline">{timeline.map((s: any) => <article className="timelineRow" key={s.number}><div className="timecode">{formatTime(s.start)}–{formatTime(s.start + s.duration)}</div><div className="timelineMain"><b>Scene {s.number} · {s.title}</b><div className="subtitleBox">{s.subtitle || "No dialogue"}</div>
+          {s.subtitle && <div className="motionControls"><button className="btn secondary" onClick={() => speakScene(s)}>🔊 Browser preview</button><button className="btn secondary" onClick={() => recordingScene === s.number ? stopDialogueRecording() : recordDialogue(s)}>{recordingScene === s.number ? "⏹ Stop recording" : "🎙️ Record dialogue"}</button><label className="btn secondary">📁 Use audio<input hidden type="file" accept="audio/*" onChange={e => selectVoiceClip(s.number, e.target.files?.[0] || null)} /></label></div>}
+          {voiceClips[s.number] && <div className="muted">🎙️ Real voice clip attached — it will be mixed into the exported video.</div>}</div></article>)}</div>
       </section>}
 
       {timeline.length > 0 && <section className="card timelineCard"><div className="resultHeader"><div><div className="badge">DIALOGUE + SUBTITLES</div><h2>Episode timeline</h2><p className="muted">{totalDuration}s • subtitles will be burned into the rendered video.</p></div><div className="modePill">READY</div></div><div className="timeline">{timeline.map((s: any) => <article className="timelineRow" key={s.number}><div className="timecode">{formatTime(s.start)}–{formatTime(s.start + s.duration)}</div><div className="timelineMain"><b>Scene {s.number} · {s.title}</b><div className="muted">{s.duration}s • {s.motion}</div><div className="subtitleBox">{s.subtitle || "No dialogue — instrumental/visual scene"}</div></div></article>)}</div></section>}
