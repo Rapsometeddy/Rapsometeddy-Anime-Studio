@@ -14,23 +14,51 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Privacy must be private, unlisted, or public." }, { status: 400 });
   }
 
-  const hasConnection = req.headers.get("cookie")?.includes("youtube_oauth_connected=1");
-  if (!hasConnection) {
+  const cookie = req.headers.get("cookie") || "";
+  const accessToken = cookie.match(/(?:^|; )youtube_access_token=([^;]+)/)?.[1];
+  if (!accessToken) {
     return NextResponse.json({
       connected: false,
       setupRequired: true,
-      error: "YouTube is not connected. Connect Google/YouTube first."
+      error: "YouTube is not connected or the access token has expired. Connect again."
     }, { status: 401 });
   }
 
-  // Uploading the rendered MP4 requires a server-side OAuth access/refresh
-  // token and a binary upload stream. This endpoint deliberately stops here
-  // until secure token persistence and file transfer are configured.
+  const title = String(body?.title || "Rapsometeddy Anime Episode").slice(0, 100);
+  const description = String(body?.description || "").slice(0, 5000);
+  const tags = Array.isArray(body?.tags) ? body.tags.map((x: any) => String(x)).filter(Boolean).slice(0, 30) : [];
+
+  const metadata = {
+    snippet: { title, description, tags, categoryId: "24" },
+    status: { privacyStatus }
+  };
+
+  const session = await fetch(
+    "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+    {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json; charset=UTF-8",
+        "X-Upload-Content-Type": "video/mp4"
+      },
+      body: JSON.stringify(metadata)
+    }
+  );
+
+  if (!session.ok) {
+    const detail = await session.text().catch(() => "");
+    return NextResponse.json({ error: detail || "Could not start YouTube upload session." }, { status: session.status });
+  }
+
+  const uploadUrl = session.headers.get("location");
+  if (!uploadUrl) return NextResponse.json({ error: "YouTube did not return an upload URL." }, { status: 502 });
+
   return NextResponse.json({
     connected: true,
-    ready: false,
-    setupRequired: true,
+    ready: true,
     privacyStatus,
-    message: "YouTube OAuth connection is established, but secure token persistence and MP4 upload storage still need to be configured."
-  }, { status: 501 });
+    uploadUrl,
+    message: "Upload session ready. Send the rendered MP4 to the returned upload URL."
+  });
 }
