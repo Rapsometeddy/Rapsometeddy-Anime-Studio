@@ -26,3 +26,10 @@
 .editIndex{font-weight:800}
 .editMix{font-size:11px;letter-spacing:.06em}
 @media(max-width:700px){.editRow{grid-template-columns:34px 1fr}.editMix{grid-column:2}}
+
+.ytBlock{display:grid;gap:8px;margin-top:14px}
+.copyBox{padding:12px;border:1px solid rgba(168,85,247,.18);border-radius:12px;background:rgba(255,255,255,.025);line-height:1.5}
+.pre{white-space:pre-wrap;font:inherit;margin:0}
+.tagList{display:flex;flex-wrap:wrap;gap:7px}
+.tag{padding:6px 9px;border-radius:999px;border:1px solid rgba(168,85,247,.2);font-size:12px}
+.check{padding:7px 0;color:#d9d0e3}
