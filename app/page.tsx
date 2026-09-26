@@ -538,7 +538,9 @@ export default function Home() {
         combined = videoStream;
         await voiceAudio.play().catch(() => {});
       }
-    }\n\n    if (audioUrl) {
+    }
+
+    if (audioUrl) {
       audio = new Audio(audioUrl);
       audio.crossOrigin = "anonymous";
       const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
@@ -719,7 +721,9 @@ export default function Home() {
             {result?.episode && characterBible.length === 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate storyboard"}</button>}
             {(storyboard.length > 0 || multiShots.length > 0) && <button className="btn storyboardBtn" disabled={motionLoading} onClick={generateMotion}>{motionLoading ? "Planning motion…" : multiShots.length ? "🎞️ Animate multi-shot scenes" : "🎞️ Animate storyboard"}</button>}
             {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={autoEditLoading} onClick={runAutoEdit}>{autoEditLoading ? "Editing episode…" : "🎬 Auto Edit Episode"}</button>}
-            {autoEdit && <button className="btn storyboardBtn" disabled={thumbnailLoading} onClick={generateThumbnail}>{thumbnailLoading ? "Generating thumbnail…" : "🖼️ Generate thumbnail"}</button>}\n            {autoEdit && <button className="btn storyboardBtn" disabled={youtubeLoading} onClick={buildYoutubePackage}>{youtubeLoading ? "Preparing YouTube package…" : "📺 Build YouTube package"}</button>}\n            {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
+            {autoEdit && <button className="btn storyboardBtn" disabled={thumbnailLoading} onClick={generateThumbnail}>{thumbnailLoading ? "Generating thumbnail…" : "🖼️ Generate thumbnail"}</button>}
+            {autoEdit && <button className="btn storyboardBtn" disabled={youtubeLoading} onClick={buildYoutubePackage}>{youtubeLoading ? "Preparing YouTube package…" : "📺 Build YouTube package"}</button>}
+            {motion?.shots?.length > 0 && <button className="btn storyboardBtn" disabled={timelineLoading} onClick={buildTimeline}>{timelineLoading ? "Building timeline…" : "💬 Build dialogue + subtitle timeline"}</button>}
             {error && <div className="error">{error}</div>}
             <button className="btn secondary" onClick={clearAll}>Clear</button>
           </div>
