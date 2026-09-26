@@ -3,6 +3,8 @@
 AI-assisted workspace for turning original stories and songs into anime/motion-manga episodes.
 
 ## Pipeline
+
+> Production build verification in progress.
 Story → episode blueprint → character prompts → scene prompts → image generation → motion → voices/subtitles → original song → edit → approval → YouTube.
 
 ## Implemented
