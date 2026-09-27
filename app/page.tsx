@@ -750,7 +750,7 @@ export default function Home() {
           {workflowStatus === "published" && <span className="notice">🚀 Published on YouTube.</span>}
         </div>
         {workflowMessage && <div className="notice">{workflowMessage}</div>}
-      </section>
+      </section>}
 
       <section className="card projectLibraryCard">
         <div className="resultHeader"><div><div className="badge">🗂️ PROJECT LIBRARY</div><h2>Save & reopen episodes</h2><p className="muted">Your episode blueprint, characters, storyboard, motion, edit plan, thumbnail and YouTube package are stored in Supabase.</p></div></div>
@@ -795,7 +795,7 @@ export default function Home() {
         </div>
         {youtubeVideoUrl && <div className="notice">✅ Uploaded: <a href={youtubeVideoUrl} target="_blank" rel="noreferrer">{youtubeVideoUrl}</a></div>}
         <div className="notice">Approval gate: the upload button only works while the episode is <b>approved</b>.</div>
-      </section>
+      </section>}
 
       {characterBible.length > 0 && <section className="card characterCard">
         <div className="resultHeader"><div><div className="badge">👑 CHARACTER CONSISTENCY ENGINE</div><h2>Character Bible</h2><p className="muted">These visual locks are reused in storyboard prompts so the cast stays consistent from scene to scene.</p></div><div className="modePill">LOCKED</div></div>
@@ -805,7 +805,7 @@ export default function Home() {
             <button className="btn storyboardBtn" disabled={characterRefLoading === c.id} onClick={() => generateCharacterReference(c)}>{characterRefLoading === c.id ? "Generating reference…" : characterRefs[c.id] ? "Regenerate reference" : "🎨 Generate reference sheet"}</button>
           </div>
         </article>)}</div>
-      </section>
+      </section>}
 
       {multiShots.length > 0 && <section className="card multiShotCard">
         <div className="resultHeader"><div><div className="badge">🎞️ MULTI-SHOT DIRECTOR</div><h2>{multiShots.length} cinematic shots</h2><p className="muted">Each scene is broken into establishing, character, reaction/action and closing shots.</p></div><div className="modePill">4 SHOTS / SCENE</div></div>
@@ -814,7 +814,7 @@ export default function Home() {
           <div className="shotInfo"><b>Shot {s.shotInScene}</b><span>Scene {s.sceneNumber}</span><strong>{s.camera}</strong><small>{s.duration.toFixed(1)}s</small></div>
           {s.dialogue && <p className="shotDialogue">“{s.dialogue}”</p>}
         </article>)}</div>
-      </section>
+      </section>}
 
       {storyboard.length > 0 && <section className="card storyboard"><div className="resultHeader"><div><div className="badge">VISUAL STORYBOARD</div><h2>{result?.episode?.title || "Episode storyboard"}</h2><p className="muted">Cinematic frames become the visual base for motion, dialogue and subtitles.</p></div><div className="modePill">{storyboard.length} frames</div></div><div className="storyboardGrid">{storyboard.map((frame: any) => <article className="frameCard" key={frame.number}><div className="frameImageWrap"><img src={frame.imageUrl} alt={`Storyboard frame ${frame.number}: ${frame.title}`} className="frameImage" loading="lazy" /><span className="frameNumber">{String(frame.number).padStart(2, "0")}</span></div><div className="frameBody"><h3>{frame.title}</h3><div className="muted">{frame.duration}s • cinematic 16:9</div>{frame.dialogue && <p>{frame.dialogue}</p>}</div></article>)}</div></section>}
 
@@ -824,14 +824,14 @@ export default function Home() {
         <div className="resultHeader"><div><div className="badge">🎬 AUTO EDIT ENGINE</div><h2>Episode cut assembled</h2><p className="muted">{autoEdit.totalDuration}s final runtime • {autoEdit.edits?.length || 0} shots • dialogue-aware music mix</p></div><div className="modePill">READY</div></div>
         <div className="editTimeline">{(autoEdit.edits || []).map((e: any) => <article className="editRow" key={e.order}><span className="editIndex">{String(e.order).padStart(2,"0")}</span><div><b>{e.title}</b><div className="muted">{formatTime(e.start)} → {formatTime(e.start + e.duration)} • {e.motion}</div></div><span className="editMix">{e.musicDuck ? "🎙️ MUSIC DUCK" : "🎵 FULL MUSIC"}</span></article>)}</div>
         <div className="notice">🎵 Original music: {autoEdit.audioMix?.music}. During dialogue, the planned music level drops to {Math.round((autoEdit.audioMix?.dialogueMusicGain || 0.35) * 100)}%.</div>
-      </section>
+      </section>}
 
       {thumbnail && <section className="card thumbnailCard">
         <div className="resultHeader"><div><div className="badge">🖼️ THUMBNAIL STUDIO</div><h2>Episode thumbnail</h2><p className="muted">AI-generated 16:9 artwork using the Rapsometeddy visual identity.</p></div><div className="modePill">FLUX</div></div>
         <div className="thumbnailPreview"><img src={thumbnail.imageUrl} alt={thumbnail.title + " thumbnail"} /></div>
         <div className="ytBlock"><b>Generation prompt</b><div className="copyBox">{thumbnail.prompt}</div></div>
         <div className="motionControls"><button className="btn" onClick={generateThumbnail}>🔄 Regenerate</button><button className="btn secondary" onClick={downloadThumbnail}>🖼️ Open full thumbnail</button></div>
-      </section>
+      </section>}
 
       {youtubePackage && <section className="card youtubeCard">
         <div className="resultHeader"><div><div className="badge">📺 YOUTUBE PACKAGE</div><h2>Upload-ready episode metadata</h2><p className="muted">Title, description, chapters, tags and thumbnail direction generated from your episode.</p></div><div className="modePill">READY</div></div>
@@ -841,7 +841,7 @@ export default function Home() {
         <div className="ytBlock"><b>Thumbnail prompt</b><div className="copyBox">{youtubePackage.thumbnailPrompt}</div></div>
         <div className="ytBlock"><b>Upload checklist</b>{(youtubePackage.uploadChecklist || []).map((x: string) => <div className="check" key={x}>☐ {x}</div>)}</div>
         <button className="btn storyboardBtn" onClick={downloadYoutubePackage}>⬇️ Export YouTube package</button>
-      </section>
+      </section>}
 
       {timeline.length > 0 && <section className="card voiceCard">
         <div className="resultHeader"><div><div className="badge">VOICE LAB • FREE</div><h2>Dialogue voice preview</h2><p className="muted">Uses your device/browser speech engine, so no paid voice API is required. This is a preview layer; the final voice recording can be replaced later.</p></div><div className="modePill">{voices.length} voices</div></div>
