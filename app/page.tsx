@@ -671,7 +671,10 @@ export default function Home() {
       await ffmpeg.writeFile("input.webm", await fetchFile(webm));
       await ffmpeg.exec(["-i", "input.webm", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", "output.mp4"]);
       const data = await ffmpeg.readFile("output.mp4");
-      const blob = new Blob([data as Uint8Array], { type: "video/mp4" });
+      const mp4Bytes = data instanceof Uint8Array ? data : new TextEncoder().encode(String(data));
+      const mp4Buffer = new ArrayBuffer(mp4Bytes.byteLength);
+      new Uint8Array(mp4Buffer).set(mp4Bytes);
+      const blob = new Blob([mp4Buffer], { type: "video/mp4" });
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url; a.download = `${title || "rapsometeddy-anime"}.mp4`; a.click();
