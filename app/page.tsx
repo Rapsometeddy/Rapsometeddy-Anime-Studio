@@ -274,60 +274,84 @@ export default function Home() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not load projects.");
       setProjects(d);
-    } catch (e: any) { setProjectMessage(e.message || "Could not load projects."); }
-    finally { setProjectLoading(false); }
+      if (d.length === 0) {
+        const local = getLocalProjects();
+        if (local.length) setProjects(local);
+      }
+    } catch {
+      setProjects(getLocalProjects());
+      setProjectMessage("📱 Showing projects saved on this device. Supabase is not configured yet.");
+    } finally { setProjectLoading(false); }
+  }
+
+  function getLocalProjects() {
+    try { return JSON.parse(localStorage.getItem("rapsometeddy_anime_projects") || "[]"); }
+    catch { return []; }
+  }
+
+  function setLocalProjects(items: any[]) {
+    localStorage.setItem("rapsometeddy_anime_projects", JSON.stringify(items));
   }
 
   async function saveProject() {
     if (!result?.episode) { setProjectMessage("Generate an episode first."); return; }
     setProjectSaving(true);
+    const key = projectKey || crypto.randomUUID();
+    const project = {
+      project_key: key,
+      title: result.episode.title || title || "Untitled Anime Episode",
+      story,
+      song,
+      blueprint: result.episode,
+      character_bible: characterBible,
+      character_refs: characterRefs,
+      storyboard,
+      multi_shots: multiShots,
+      motion,
+      timeline,
+      auto_edit: autoEdit,
+      youtube_package: youtubePackage,
+      thumbnail,
+      workflow_status: workflowStatus,
+      youtube_video_url: youtubeVideoUrl || null,
+      updated_at: new Date().toISOString(),
+      created_at: new Date().toISOString()
+    };
     try {
       const r = await fetch("/api/projects", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          project: {
-            projectKey: projectKey || crypto.randomUUID(),
-            title: result.episode.title || title || "Untitled Anime Episode",
-            story,
-            song,
-            blueprint: result.episode,
-            characterBible,
-            characterRefs,
-            storyboard,
-            multiShots,
-            motion,
-            timeline,
-            autoEdit,
-            youtubePackage,
-            thumbnail,
-            workflowStatus,
-            youtubeVideoUrl: youtubeVideoUrl || null
-          }
-        })
+        body: JSON.stringify({ project: { ...project, projectKey: key, characterBible, characterRefs, multiShots, autoEdit, youtubePackage, workflowStatus, youtubeVideoUrl } })
       });
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Could not save project.");
       setProjectKey(d.project_key);
-      setProjectMessage("💾 Project saved.");
+      setProjectMessage("💾 Project saved to Supabase.");
       loadProjects();
-    } catch (e: any) { setProjectMessage(e.message || "Could not save project."); }
-    finally { setProjectSaving(false); }
+    } catch {
+      const items = getLocalProjects().filter((p: any) => p.project_key !== key);
+      setLocalProjects([project, ...items]);
+      setProjectKey(key);
+      setProjectMessage("💾 Project saved on this device. Supabase is not configured yet.");
+      setProjects([project, ...items]);
+    } finally { setProjectSaving(false); }
   }
 
   async function openProject(key: string) {
     setProjectLoading(true);
     try {
+      let p: any;
       const r = await fetch(`/api/projects/${encodeURIComponent(key)}`);
-      const p = await r.json();
-      if (!r.ok) throw new Error(p.error || "Could not open project.");
+      const d = await r.json();
+      if (r.ok) p = d;
+      else throw new Error(d.error || "Could not open project.");
       setProjectKey(p.project_key);
       setTitle(p.title || "");
       setStory(p.story || "");
       setSong(p.song || "");
       setResult(p.blueprint ? { episode: p.blueprint } : null);
       setCharacterBible(p.character_bible || []);
-      setCharacterRefs(p.character_refs || []);
+      setCharacterRefs(p.character_refs || {});
       setStoryboard(p.storyboard || []);
       setMultiShots(p.multi_shots || []);
       setMotion(p.motion || null);
@@ -338,8 +362,27 @@ export default function Home() {
       setWorkflowStatus(p.workflow_status || "draft");
       setYoutubeVideoUrl(p.youtube_video_url || "");
       setProjectMessage(`📂 Opened "${p.title}".`);
-    } catch (e: any) { setProjectMessage(e.message || "Could not open project."); }
-    finally { setProjectLoading(false); }
+    } catch {
+      const p = getLocalProjects().find((x: any) => x.project_key === key);
+      if (!p) { setProjectMessage("Could not open this episode."); return; }
+      setProjectKey(p.project_key);
+      setTitle(p.title || "");
+      setStory(p.story || "");
+      setSong(p.song || "");
+      setResult(p.blueprint ? { episode: p.blueprint } : null);
+      setCharacterBible(p.character_bible || []);
+      setCharacterRefs(p.character_refs || {});
+      setStoryboard(p.storyboard || []);
+      setMultiShots(p.multi_shots || []);
+      setMotion(p.motion || null);
+      setTimeline(p.timeline || []);
+      setAutoEdit(p.auto_edit || null);
+      setYoutubePackage(p.youtube_package || null);
+      setThumbnail(p.thumbnail || null);
+      setWorkflowStatus(p.workflow_status || "draft");
+      setYoutubeVideoUrl(p.youtube_video_url || "");
+      setProjectMessage(`📱 Reopened "${p.title}" from this device.`);
+    } finally { setProjectLoading(false); }
   }
 
   async function connectYoutube() {
@@ -754,7 +797,7 @@ export default function Home() {
       </section>}
 
       <section className="card projectLibraryCard">
-        <div className="resultHeader"><div><div className="badge">🗂️ PROJECT LIBRARY</div><h2>Save & reopen episodes</h2><p className="muted">Your episode blueprint, characters, storyboard, motion, edit plan, thumbnail and YouTube package are stored in Supabase.</p></div></div>
+        <div className="resultHeader"><div><div className="badge">🗂️ PROJECT LIBRARY</div><h2>Save & reopen episodes</h2><p className="muted">Episodes are saved to Supabase when configured, with an automatic on-device backup for testing.</p></div></div>
         <div className="motionControls">
           <button className="btn" disabled={projectSaving || !result?.episode} onClick={saveProject}>{projectSaving ? "Saving…" : "💾 Save project"}</button>
           <button className="btn secondary" disabled={projectLoading} onClick={loadProjects}>↻ Refresh library</button>
