@@ -508,8 +508,9 @@ export default function Home() {
 
     const videoStream = canvas.captureStream(30);
     const generatedVoice = await buildVoiceAudioTrack();
-    const voiceDestination = new (window.AudioContext || (window as any).webkitAudioContext)().createMediaStreamDestination();
-    const voiceAudioContext = voiceDestination.context;
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    const voiceAudioContext: AudioContext = new AudioContextClass();
+    const voiceDestination = voiceAudioContext.createMediaStreamDestination();
     let audio: HTMLAudioElement | null = null;
     let musicGainNode: GainNode | null = null;
     let musicAudioContext: AudioContext | null = null;
