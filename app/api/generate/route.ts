@@ -26,7 +26,7 @@ export async function POST(req:Request){
 
   // Free-first: Gemini's documented free tier is preferred when a Gemini key is configured.
   if(process.env.GEMINI_API_KEY){
-    const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+    const model = process.env.GEMINI_MODEL || "gemini-3.5-flash-lite";
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
       method:"POST",
       headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
