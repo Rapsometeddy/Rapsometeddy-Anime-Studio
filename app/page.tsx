@@ -577,52 +577,64 @@ export default function Home() {
 
   async function buildWebmBlob(): Promise<Blob> {
     if (!motion?.shots?.length) throw new Error("Generate motion scenes first.");
-    const editPlan = autoEdit?.edits || [];
+
+    // Mobile-friendly export: render at 480p/24fps instead of 1280x720/30fps.
+    // This dramatically lowers canvas and MediaRecorder memory pressure on phones.
     const canvas = document.createElement("canvas");
-    canvas.width = 1280; canvas.height = 720;
+    canvas.width = 854;
+    canvas.height = 480;
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Canvas is not supported on this device.");
+    if (!("captureStream" in canvas)) throw new Error("Video capture is not supported by this browser.");
 
-    const videoStream = canvas.captureStream(30);
+    const videoStream = canvas.captureStream(24);
     const generatedVoice = await buildVoiceAudioTrack();
     const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    const voiceAudioContext: AudioContext = new AudioContextClass();
-    const voiceDestination = voiceAudioContext.createMediaStreamDestination();
+    let voiceAudioContext: AudioContext | null = null;
+    let voiceDestination: MediaStreamAudioDestinationNode | null = null;
     let audio: HTMLAudioElement | null = null;
     let musicGainNode: GainNode | null = null;
     let musicAudioContext: AudioContext | null = null;
-    let combined: MediaStream = videoStream;
     const voicePlayers: HTMLAudioElement[] = [];
-    Object.entries(voiceClips).forEach(([sceneNumber, file]) => {
-      const audio = new Audio(URL.createObjectURL(file));
-      audio.preload = "auto";
-      const source = voiceAudioContext.createMediaElementSource(audio);
-      source.connect(voiceDestination); source.connect(voiceAudioContext.destination);
-      voicePlayers.push(audio);
-    });
-    voiceDestination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
+    const objectUrls: string[] = [];
 
-    if (generatedVoice && !audioUrl) {
-      const voiceAudio = new Audio(URL.createObjectURL(generatedVoice));
-      voiceAudio.loop = false;
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    try {
       if (AudioContextClass) {
+        voiceAudioContext = new AudioContextClass();
+        voiceDestination = voiceAudioContext.createMediaStreamDestination();
+
+        Object.entries(voiceClips).forEach(([sceneNumber, file]) => {
+          const clipUrl = URL.createObjectURL(file);
+          objectUrls.push(clipUrl);
+          const player = new Audio(clipUrl);
+          player.preload = "auto";
+          const source = voiceAudioContext!.createMediaElementSource(player);
+          source.connect(voiceDestination!);
+          source.connect(voiceAudioContext!.destination);
+          voicePlayers.push(player);
+        });
+
+        voiceDestination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
+      }
+
+      if (generatedVoice && !audioUrl && AudioContextClass) {
+        const voiceUrl = URL.createObjectURL(generatedVoice);
+        objectUrls.push(voiceUrl);
+        const voiceAudio = new Audio(voiceUrl);
+        voiceAudio.preload = "auto";
         const ac = new AudioContextClass();
         const source = ac.createMediaElementSource(voiceAudio);
         const destination = ac.createMediaStreamDestination();
         source.connect(destination);
         source.connect(ac.destination);
         destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
-        combined = videoStream;
         await voiceAudio.play().catch(() => {});
       }
-    }
 
-    if (audioUrl) {
-      audio = new Audio(audioUrl);
-      audio.crossOrigin = "anonymous";
-      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-      if (AudioContextClass) {
+      if (audioUrl && AudioContextClass) {
+        audio = new Audio(audioUrl);
+        audio.crossOrigin = "anonymous";
+        audio.preload = "auto";
         const ac = new AudioContextClass();
         const source = ac.createMediaElementSource(audio);
         const destination = ac.createMediaStreamDestination();
@@ -633,98 +645,146 @@ export default function Home() {
         musicGainNode.connect(ac.destination);
         musicAudioContext = ac;
         destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
-        combined = videoStream;
         await audio.play().catch(() => {});
       }
-    }
 
-    const mime = MediaRecorder.isTypeSupported("video/webm;codecs=vp9")
-      ? "video/webm;codecs=vp9" : "video/webm";
-    const recorder = new MediaRecorder(combined, { mimeType: mime });
-    const chunks: Blob[] = [];
-    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    const stopped = new Promise<void>(resolve => { recorder.onstop = () => resolve(); });
-    recorder.start(250);
+      const mimeCandidates = [
+        "video/webm;codecs=vp8",
+        "video/webm;codecs=vp9",
+        "video/webm"
+      ];
+      const mime = mimeCandidates.find(type => MediaRecorder.isTypeSupported(type));
+      if (!mime) throw new Error("This browser cannot record WebM video. Try Chrome on Android.");
 
-    for (let i = 0; i < motion.shots.length; i++) {
-      const shot = motion.shots[i];
-      const img = new Image();
-      // Older projects can still contain direct Pollinations URLs. Always route
-      // external storyboard images through our same-origin proxy before canvas export.
-      const rawImageUrl = String(shot.imageUrl || "");
-      if (!rawImageUrl) throw new Error("Storyboard frame has no image URL.");
-      const imageUrl = rawImageUrl.startsWith("/")
-        ? rawImageUrl
-        : `/api/image-proxy?url=${encodeURIComponent(rawImageUrl)}`;
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Could not load storyboard frame through the Anime Studio image proxy."));
-        img.src = imageUrl;
+      const recorder = new MediaRecorder(videoStream, {
+        mimeType: mime,
+        videoBitsPerSecond: 1_800_000
       });
-      const voiceClip = voiceClips[Number(shot.number)];
-      const edit = editPlan[i];
-      if (musicGainNode && musicAudioContext) musicGainNode.gain.setTargetAtTime(edit?.musicGain ?? 0.72, musicAudioContext.currentTime, 0.04);
-      if (voiceClip) {
-        const player = voicePlayers.find((a: HTMLAudioElement) => a.src.includes(encodeURIComponent(voiceClip.name)));
-      }
-      const start = performance.now();
-      const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
-      const subtitle = timeline[i]?.subtitle || shot.dialogue || "";
-      if (voiceClip) {
-        const idx = Object.keys(voiceClips).findIndex(k => Number(k) === Number(shot.number));
-        const player = voicePlayers[idx];
-        if (player) { player.currentTime = 0; await player.play().catch(() => {}); }
-      }
-      while (performance.now() - start < duration) {
-        const p = Math.min(1, (performance.now() - start) / duration);
-        const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11
-          : shot.motion === "slow zoom out" ? 1.13 - p * .11 : 1.08;
-        const pan = shot.motion === "pan right" ? (-.02 + p * .04) : 0;
-        const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
-        const w = img.width * scale, h = img.height * scale;
-        ctx.fillStyle = "#08060f"; ctx.fillRect(0, 0, canvas.width, canvas.height);
-        ctx.drawImage(img, (canvas.width - w) / 2 + pan * canvas.width, (canvas.height - h) / 2, w, h);
-        ctx.fillStyle = "rgba(8,6,15,.32)"; ctx.fillRect(0, 0, canvas.width, canvas.height);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
+      const stopped = new Promise<void>((resolve, reject) => {
+        recorder.onstop = () => resolve();
+        recorder.onerror = () => reject(new Error("The browser stopped video recording unexpectedly."));
+      });
 
-        ctx.fillStyle = "white";
-        ctx.font = "700 28px Arial";
-        ctx.fillText(shot.title || `Scene ${i + 1}`, 42, 58);
+      recorder.start(500);
 
-        if (subtitle) {
-          const maxWidth = 1080;
-          const words = String(subtitle).split(/\s+/);
-          const lines: string[] = [];
-          let line = "";
-          ctx.font = "700 30px Arial";
-          for (const word of words) {
-            const test = line ? line + " " + word : word;
-            if (ctx.measureText(test).width > maxWidth && line) {
-              lines.push(line); line = word;
-            } else line = test;
-          }
-          if (line) lines.push(line);
-          const lineHeight = 38;
-          const boxH = lines.length * lineHeight + 30;
-          const boxY = canvas.height - boxH - 34;
-          ctx.fillStyle = "rgba(0,0,0,.72)";
-          ctx.fillRect(70, boxY, canvas.width - 140, boxH);
-          ctx.fillStyle = "#fff";
-          lines.forEach((text, idx) => {
-            const tw = ctx.measureText(text).width;
-            ctx.fillText(text, (canvas.width - tw) / 2, boxY + 25 + (idx + 1) * lineHeight);
-          });
+      const editPlan = autoEdit?.edits || [];
+
+      for (let i = 0; i < motion.shots.length; i++) {
+        const shot = motion.shots[i];
+        const rawImageUrl = String(shot.imageUrl || "").trim();
+        if (!rawImageUrl) throw new Error(`Scene ${i + 1} has no storyboard image.`);
+
+        const imageUrl = rawImageUrl.startsWith("/")
+          ? rawImageUrl
+          : `/api/image-proxy?url=${encodeURIComponent(rawImageUrl)}`;
+
+        // Fetch through our same-origin proxy, turn the response into a local Blob URL,
+        // then draw that local image into canvas. This avoids remote-image CORS issues.
+        const imageResponse = await fetch(imageUrl, { cache: "no-store" });
+        if (!imageResponse.ok) {
+          throw new Error(`Scene ${i + 1} image download failed (HTTP ${imageResponse.status}).`);
+        }
+        const imageBlob = await imageResponse.blob();
+        if (!imageBlob.type.startsWith("image/")) {
+          throw new Error(`Scene ${i + 1} did not return an image.`);
+        }
+        const localImageUrl = URL.createObjectURL(imageBlob);
+        objectUrls.push(localImageUrl);
+
+        const img = new Image();
+        await new Promise<void>((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error(`Scene ${i + 1} image could not be decoded.`));
+          img.src = localImageUrl;
+        });
+        if (typeof img.decode === "function") await img.decode().catch(() => {});
+
+        const voiceClip = voiceClips[Number(shot.number)];
+        const edit = editPlan[i];
+        if (musicGainNode && musicAudioContext) {
+          musicGainNode.gain.setTargetAtTime(edit?.musicGain ?? 0.72, musicAudioContext.currentTime, 0.04);
         }
 
-        setExportProgress(Math.round(((i + p) / motion.shots.length) * 100));
-        await new Promise(requestAnimationFrame);
-      }
-    }
+        const start = performance.now();
+        const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
+        const subtitle = timeline[i]?.subtitle || shot.dialogue || "";
 
-    if (musicGainNode && musicAudioContext) musicGainNode.gain.setTargetAtTime(0.72, musicAudioContext.currentTime, 0.04);
-    audio?.pause();
-    recorder.stop();
-    await stopped;
-    return new Blob(chunks, { type: mime });
+        if (voiceClip) {
+          const idx = Object.keys(voiceClips).findIndex(k => Number(k) === Number(shot.number));
+          const player = voicePlayers[idx];
+          if (player) {
+            player.currentTime = 0;
+            await player.play().catch(() => {});
+          }
+        }
+
+        while (performance.now() - start < duration) {
+          const p = Math.min(1, (performance.now() - start) / duration);
+          const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11
+            : shot.motion === "slow zoom out" ? 1.13 - p * .11 : 1.08;
+          const pan = shot.motion === "pan right" ? (-.02 + p * .04) : 0;
+          const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
+          const w = img.width * scale, h = img.height * scale;
+
+          ctx.fillStyle = "#08060f";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.drawImage(img, (canvas.width - w) / 2 + pan * canvas.width, (canvas.height - h) / 2, w, h);
+          ctx.fillStyle = "rgba(8,6,15,.32)";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+          ctx.fillStyle = "white";
+          ctx.font = "700 24px Arial";
+          ctx.fillText(shot.title || `Scene ${i + 1}`, 28, 44);
+
+          if (subtitle) {
+            const maxWidth = 720;
+            const words = String(subtitle).split(/\\s+/);
+            const lines: string[] = [];
+            let line = "";
+            ctx.font = "700 24px Arial";
+            for (const word of words) {
+              const test = line ? line + " " + word : word;
+              if (ctx.measureText(test).width > maxWidth && line) {
+                lines.push(line);
+                line = word;
+              } else line = test;
+            }
+            if (line) lines.push(line);
+
+            const lineHeight = 31;
+            const boxH = lines.length * lineHeight + 24;
+            const boxY = canvas.height - boxH - 22;
+            ctx.fillStyle = "rgba(0,0,0,.72)";
+            ctx.fillRect(46, boxY, canvas.width - 92, boxH);
+            ctx.fillStyle = "#fff";
+            lines.forEach((text, idx) => {
+              const tw = ctx.measureText(text).width;
+              ctx.fillText(text, (canvas.width - tw) / 2, boxY + 20 + (idx + 1) * lineHeight);
+            });
+          }
+
+          setExportProgress(Math.round(((i + p) / motion.shots.length) * 100));
+          await new Promise(requestAnimationFrame);
+        }
+      }
+
+      audio?.pause();
+      voicePlayers.forEach(player => player.pause());
+      recorder.stop();
+      await stopped;
+
+      if (!chunks.length) throw new Error("No video data was produced by the browser.");
+      return new Blob(chunks, { type: mime });
+    } finally {
+      audio?.pause();
+      voicePlayers.forEach(player => player.pause());
+      voiceAudioContext?.close().catch(() => {});
+      musicAudioContext?.close().catch(() => {});
+      objectUrls.forEach(url => URL.revokeObjectURL(url));
+      videoStream.getTracks().forEach(track => track.stop());
+    }
   }
 
   async function exportVideo() {
