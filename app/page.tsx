@@ -63,6 +63,8 @@ export default function Home() {
   const [youtubeVideoFile, setYoutubeVideoFile] = useState<File | null>(null);
   const [youtubePublishing, setYoutubePublishing] = useState(false);
   const [youtubeUploadProgress, setYoutubeUploadProgress] = useState(0);
+  const [zapierSending, setZapierSending] = useState(false);
+  const [zapierMessage, setZapierMessage] = useState("");
   const [youtubeVideoUrl, setYoutubeVideoUrl] = useState("");
   const [youtubeConnected, setYoutubeConnected] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
@@ -389,7 +391,7 @@ export default function Home() {
     window.location.href = "/api/youtube/auth";
   }
 
-  async function publishToYoutube() {
+  async function sendToZapier() {
     if (workflowStatus !== "approved") {
       setError("Approve the episode first.");
       return;
@@ -398,42 +400,26 @@ export default function Home() {
       setError("Choose the rendered MP4 file first.");
       return;
     }
-    setError(""); setYoutubePublishing(true); setYoutubeUploadProgress(0);
+    setError(""); setZapierMessage(""); setZapierSending(true); setYoutubeUploadProgress(0);
     try {
-      const r = await fetch("/api/youtube/publish", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          workflowStatus,
-          privacyStatus: youtubePrivacy,
-          title: youtubePackage?.title || result?.episode?.title || title,
-          description: youtubePackage?.description || "",
-          tags: youtubePackage?.tags || []
-        })
-      });
+      const form = new FormData();
+      form.append("video", youtubeVideoFile);
+      form.append("workflowStatus", workflowStatus);
+      form.append("privacyStatus", youtubePrivacy);
+      form.append("title", youtubePackage?.title || result?.episode?.title || title);
+      form.append("description", youtubePackage?.description || "");
+      form.append("tags", JSON.stringify(youtubePackage?.tags || []));
+      if (thumbnail?.imageUrl) form.append("thumbnailUrl", thumbnail.imageUrl);
+
+      const r = await fetch("/api/zapier/youtube", { method: "POST", body: form });
       const d = await r.json();
-      if (!r.ok) throw new Error(d.error || d.message || "Could not start YouTube upload.");
-      if (!d.uploadUrl) throw new Error("YouTube did not return an upload session.");
-      const upload = await fetch(d.uploadUrl, {
-        method: "PUT",
-        headers: { "Content-Type": youtubeVideoFile.type || "video/mp4", "Content-Length": String(youtubeVideoFile.size) },
-        body: youtubeVideoFile
-      });
-      if (!upload.ok) {
-        const message = await upload.text().catch(() => "");
-        throw new Error(message || `YouTube upload failed (${upload.status}).`);
-      }
-      const video = await upload.json();
-      const id = video.id;
-      if (id) {
-        setYoutubeVideoUrl(`https://www.youtube.com/watch?v=${id}`);
-        setYoutubeUploadProgress(100);
-        setWorkflowStatus("published");
-        setWorkflowMessage("YouTube upload completed.");
-      }
+      if (!r.ok) throw new Error(d.error || d.detail || "Zapier handoff failed.");
+      setYoutubeVideoUrl(d.videoUrl || "");
+      setYoutubeUploadProgress(100);
+      setZapierMessage("✅ Episode uploaded to secure storage and handed to Zapier → YouTube.");
     } catch (e: any) {
-      setError(e.message || "YouTube upload failed.");
-    } finally { setYoutubePublishing(false); }
+      setError(e.message || "Zapier handoff failed.");
+    } finally { setZapierSending(false); }
   }
 
   async function workflowAction(action: string) {
@@ -443,7 +429,7 @@ export default function Home() {
       const d = await r.json();
       if (!r.ok) throw new Error(d.error || "Workflow action failed.");
       setWorkflowStatus(d.status);
-      setWorkflowMessage(d.published ? "Episode marked published. Connect a platform publisher later to perform an external upload." : `Status changed to ${d.status}.`);
+      setWorkflowMessage(d.published ? "Episode approved. Send the rendered MP4 to Zapier to perform the external YouTube upload." : `Status changed to ${d.status}.`);
     } catch (e: any) { setError(e.message || "Workflow action failed."); }
     finally { setWorkflowLoading(false); }
   }
@@ -812,33 +798,33 @@ export default function Home() {
       </section>
 
       {result && <section className="card youtubePublisherCard">
-        <div className="resultHeader"><div><div className="badge">📺 YOUTUBE PUBLISHER</div><h2>Connect and upload</h2><p className="muted">OAuth connects your own YouTube channel. The MP4 is uploaded directly from your device to the YouTube upload session.</p></div><div className="modePill">{youtubeConnected ? "CONNECTED" : "NOT CONNECTED"}</div></div>
+        <div className="resultHeader"><div><div className="badge">⚡ ZAPIER → YOUTUBE</div><h2>Automated publishing handoff</h2><p className="muted">Approve the episode, choose the rendered MP4, then hand it to Zapier. Zapier can upload the video to your connected YouTube channel and continue the social workflow.</p></div><div className="modePill">{zapierSending ? "SENDING" : "READY"}</div></div>
         <div className="ytPublishGrid">
           <div>
-            <div className="label">YouTube connection</div>
-            <button className="btn" onClick={connectYoutube}>🔗 Connect YouTube</button>
-            <div className="muted">Requires Google OAuth environment variables in Vercel.</div>
+            <div className="label">Publishing gate</div>
+            <div className="notice">Episode status: <b>{workflowStatus.toUpperCase()}</b></div>
+            <div className="muted">The handoff only works after explicit approval.</div>
           </div>
           <div>
-            <div className="label">Privacy</div>
+            <div className="label">YouTube privacy</div>
             <select className="input" value={youtubePrivacy} onChange={e => setYoutubePrivacy(e.target.value)}>
               <option value="private">Private</option><option value="unlisted">Unlisted</option><option value="public">Public</option>
             </select>
-            <div className="muted">YouTube may restrict uploads from unverified API projects to private visibility.</div>
           </div>
           <div>
             <div className="label">Rendered MP4</div>
-            <input className="input" type="file" accept="video/mp4,video/*" onChange={e => setYoutubeVideoFile(e.target.files?.[0] || null)} />
+            <input className="input" type="file" accept="video/mp4,video/webm,video/*" onChange={e => e.target.files?.[0] && setYoutubeVideoFile(e.target.files[0])} />
             {youtubeVideoFile && <div className="muted">🎬 {youtubeVideoFile.name} • {(youtubeVideoFile.size / 1024 / 1024).toFixed(1)} MB</div>}
           </div>
         </div>
         <div className="motionControls">
-          <button className="btn storyboardBtn" disabled={youtubePublishing || workflowStatus !== "approved" || !youtubeVideoFile} onClick={publishToYoutube}>
-            {youtubePublishing ? `Uploading ${youtubeUploadProgress}%…` : "🚀 Upload approved episode"}
+          <button className="btn storyboardBtn" disabled={zapierSending || workflowStatus !== "approved" || !youtubeVideoFile} onClick={sendToZapier}>
+            {zapierSending ? "⚡ Sending to Zapier…" : "⚡ Send approved episode to Zapier"}
           </button>
         </div>
-        {youtubeVideoUrl && <div className="notice">✅ Uploaded: <a href={youtubeVideoUrl} target="_blank" rel="noreferrer">{youtubeVideoUrl}</a></div>}
-        <div className="notice">Approval gate: the upload button only works while the episode is <b>approved</b>.</div>
+        {zapierMessage && <div className="notice">{zapierMessage}</div>}
+        {youtubeVideoUrl && <div className="notice">📦 Stored video handoff: <a href={youtubeVideoUrl} target="_blank" rel="noreferrer">Open temporary video URL</a></div>}
+        <div className="notice">Zapier then handles the YouTube upload. Keep the Zapier YouTube action mapped to <b>Video URL</b>, title, description, tags and privacy.</div>
       </section>}
 
       {characterBible.length > 0 && <section className="card characterCard">
