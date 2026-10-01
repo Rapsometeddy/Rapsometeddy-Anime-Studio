@@ -649,11 +649,17 @@ export default function Home() {
     for (let i = 0; i < motion.shots.length; i++) {
       const shot = motion.shots[i];
       const img = new Image();
-      img.crossOrigin = "anonymous";
+      // Older projects can still contain direct Pollinations URLs. Always route
+      // external storyboard images through our same-origin proxy before canvas export.
+      const rawImageUrl = String(shot.imageUrl || "");
+      if (!rawImageUrl) throw new Error("Storyboard frame has no image URL.");
+      const imageUrl = rawImageUrl.startsWith("/")
+        ? rawImageUrl
+        : `/api/image-proxy?url=${encodeURIComponent(rawImageUrl)}`;
       await new Promise<void>((resolve, reject) => {
         img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Could not load storyboard frame. Check the image provider/CORS."));
-        img.src = shot.imageUrl;
+        img.onerror = () => reject(new Error("Could not load storyboard frame through the Anime Studio image proxy."));
+        img.src = imageUrl;
       });
       const voiceClip = voiceClips[Number(shot.number)];
       const edit = editPlan[i];
