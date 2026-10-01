@@ -27,9 +27,9 @@ export async function POST(req:Request){
   // Free-first: Gemini's documented free tier is preferred when a Gemini key is configured.
   if(process.env.GEMINI_API_KEY){
     const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${process.env.GEMINI_API_KEY}`,{
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json","x-goog-api-key":process.env.GEMINI_API_KEY},
       body:JSON.stringify({
         contents:[{role:"user",parts:[{text:`${systemPrompt}\n\n${userPrompt}`}]}],
         generationConfig:{temperature:0.8,responseMimeType:"application/json"}
@@ -41,7 +41,8 @@ export async function POST(req:Request){
       try{return NextResponse.json({mode:"ai",provider:"gemini",episode:JSON.parse(c)})}catch{}
     }
     if(!process.env.OPENAI_API_KEY){
-      return NextResponse.json({error:"Gemini request failed. Check GEMINI_API_KEY and Gemini API quota."},{status:502});
+      const errorText=await r.text().catch(()=>"");
+      return NextResponse.json({error:`Gemini request failed: ${errorText.slice(0,500)}`},{status:502});
     }
   }
 
