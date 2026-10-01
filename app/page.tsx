@@ -72,6 +72,7 @@ export default function Home() {
   const [projectSaving, setProjectSaving] = useState(false);
   const [projectLoading, setProjectLoading] = useState(false);
   const [projectMessage, setProjectMessage] = useState("");
+  const [pipelineLoading, setPipelineLoading] = useState(false);
 
   useEffect(() => {
     if (!playing || !motion?.shots?.length) return;
@@ -111,6 +112,53 @@ export default function Home() {
       setResult(d); setCharacterBible([]); setCharacterRefs({}); setStarted(true);
     } catch (e: any) { setError(e.message); }
     finally { setLoading(false); }
+  }
+
+  async function runProductionPipeline() {
+    if (!result?.episode) return;
+    setError(""); setPipelineLoading(true);
+    try {
+      const post = async (path: string, body: any) => {
+        const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+        const d = await r.json();
+        if (!r.ok) throw new Error(d.error || `${path} failed`);
+        return d;
+      };
+
+      const charData = await post("/api/character-bible", { characters: result.episode.characters || [] });
+      const chars = charData.characters || [];
+      setCharacterBible(chars);
+
+      const storyData = await post("/api/storyboard", { episode: result.episode, characterBible: chars });
+      const frames = storyData.storyboard || [];
+      setStoryboard(frames);
+
+      const motionData = await post("/api/motion-plan", { storyboard: frames, multiShots: [] });
+      setMotion(motionData); setActiveShot(0); setPlaying(false);
+
+      const timelineData = await post("/api/timeline", { episode: result.episode, storyboard: motionData.shots || frames });
+      setTimeline(timelineData.timeline || []);
+
+      const editData = await post("/api/auto-edit", { shots: motionData.shots || [], musicDuration: 0, introDuration: 0.5, outroDuration: 1 });
+      setAutoEdit(editData);
+
+      const ytData = await post("/api/youtube-package", { episode: result.episode, autoEdit: editData });
+      setYoutubePackage(ytData);
+
+      const thumbData = await post("/api/thumbnail", {
+        title: result.episode.title || title,
+        episode: result.episode,
+        character: chars[0] || result.episode.characters?.[0] || {}
+      });
+      setThumbnail(thumbData);
+
+      setWorkflowStatus("draft");
+      setProjectMessage("⚡ Production pipeline complete. Review the episode, then export MP4 and approve it for Zapier.");
+    } catch (e: any) {
+      setError(e.message || "Production pipeline failed.");
+    } finally {
+      setPipelineLoading(false);
+    }
   }
 
   async function generateMultiShots() {
@@ -748,6 +796,7 @@ export default function Home() {
             <div><div className="label">Original song file</div><input className="input" type="file" accept="audio/*" onChange={e => selectAudio(e.target.files?.[0] || null)} /></div>
             {audioUrl && <audio controls src={audioUrl} className="audioPlayer" />}
             <button className="btn" disabled={loading} onClick={generate}>{loading ? "Generating…" : started ? "Regenerate episode" : "Generate episode"}</button>
+            {result?.episode && <button className="btn storyboardBtn" disabled={pipelineLoading} onClick={runProductionPipeline}>{pipelineLoading ? "⚡ Building full episode…" : "⚡ Run full production pipeline"}</button>}
             {result?.episode?.characters?.length > 0 && <button className="btn storyboardBtn" disabled={characterLoading} onClick={buildCharacterBible}>{characterLoading ? "Locking characters…" : characterBible.length ? "👑 Character bible locked" : "👑 Build character bible"}</button>}
             {characterBible.length > 0 && <button className="btn storyboardBtn" disabled={storyboardLoading} onClick={generateStoryboard}>{storyboardLoading ? "Building storyboard…" : "🎬 Generate locked storyboard"}</button>}
             {characterBible.length > 0 && storyboard.length > 0 && <button className="btn storyboardBtn" disabled={multiShotLoading} onClick={generateMultiShots}>{multiShotLoading ? "Directing shots…" : "🎞️ Build multi-shot scenes"}</button>}
