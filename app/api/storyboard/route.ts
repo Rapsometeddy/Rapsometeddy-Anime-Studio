@@ -38,8 +38,10 @@ export async function POST(req: Request) {
       basePrompt
     ].filter(Boolean).join(" ");
 
-    const imageUrl =
+    const providerUrl =
       "https://gen.pollinations.ai/image/" + encodeURIComponent(prompt) + "?model=" + encodeURIComponent(model) + "&width=1280&height=720&nologo=true";
+    // Serve provider images through our own origin so canvas/video export is not blocked by CORS.
+    const imageUrl = "/api/image-proxy?url=" + encodeURIComponent(providerUrl);
 
     return {
       number,
