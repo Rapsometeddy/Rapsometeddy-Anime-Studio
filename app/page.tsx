@@ -578,96 +578,60 @@ export default function Home() {
   async function buildWebmBlob(): Promise<Blob> {
     if (!motion?.shots?.length) throw new Error("Generate motion scenes first.");
 
-    // Mobile-friendly export: render at 480p/24fps instead of 1280x720/30fps.
-    // This dramatically lowers canvas and MediaRecorder memory pressure on phones.
+    // Reliability-first mobile renderer. Keep the first export video-only:
+    // Android MediaRecorder can reject mixed canvas + WebAudio streams on some devices.
+    // Audio can be muxed later after a stable video file exists.
     const canvas = document.createElement("canvas");
-    canvas.width = 854;
-    canvas.height = 480;
-    const ctx = canvas.getContext("2d");
+    canvas.width = 640;
+    canvas.height = 360;
+    const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("Canvas is not supported on this device.");
-    if (!("captureStream" in canvas)) throw new Error("Video capture is not supported by this browser.");
 
-    const videoStream = canvas.captureStream(24);
-    const generatedVoice = await buildVoiceAudioTrack();
-    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-    let voiceAudioContext: AudioContext | null = null;
-    let voiceDestination: MediaStreamAudioDestinationNode | null = null;
-    let audio: HTMLAudioElement | null = null;
-    let musicGainNode: GainNode | null = null;
-    let musicAudioContext: AudioContext | null = null;
-    const voicePlayers: HTMLAudioElement[] = [];
+    if (typeof canvas.captureStream !== "function") {
+      throw new Error("Video capture is unavailable in this browser. Open Anime Studio in Chrome.");
+    }
+
+    const videoStream = canvas.captureStream(15);
+    const videoTrack = videoStream.getVideoTracks()[0];
+    if (!videoTrack) throw new Error("The browser did not create a video capture track.");
+
+    const mimeCandidates = [
+      "video/webm",
+      "video/webm;codecs=vp8",
+      "video/webm;codecs=vp9"
+    ];
+    const mime = mimeCandidates.find(type => MediaRecorder.isTypeSupported(type));
+    if (!mime) {
+      throw new Error(
+        "This browser cannot record WebM. Chrome on Android should support video/webm; try opening the site directly in Chrome."
+      );
+    }
+
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(videoStream, {
+        mimeType: mime,
+        videoBitsPerSecond: 900_000
+      });
+    } catch (e: any) {
+      throw new Error(`Browser could not start video recorder: ${e?.name || "MediaRecorderError"}.`);
+    }
+
+    const chunks: Blob[] = [];
+    let recorderError = "";
+    recorder.ondataavailable = e => { if (e.data?.size) chunks.push(e.data); };
+    recorder.onerror = (event: any) => {
+      recorderError = event?.error?.message || event?.error?.name || "MediaRecorder error";
+    };
+
+    const stopped = new Promise<void>((resolve, reject) => {
+      recorder.onstop = () => recorderError ? reject(new Error(recorderError)) : resolve();
+    });
+
     const objectUrls: string[] = [];
 
     try {
-      if (AudioContextClass) {
-        voiceAudioContext = new AudioContextClass();
-        voiceDestination = voiceAudioContext.createMediaStreamDestination();
-
-        Object.entries(voiceClips).forEach(([sceneNumber, file]) => {
-          const clipUrl = URL.createObjectURL(file);
-          objectUrls.push(clipUrl);
-          const player = new Audio(clipUrl);
-          player.preload = "auto";
-          const source = voiceAudioContext!.createMediaElementSource(player);
-          source.connect(voiceDestination!);
-          source.connect(voiceAudioContext!.destination);
-          voicePlayers.push(player);
-        });
-
-        voiceDestination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
-      }
-
-      if (generatedVoice && !audioUrl && AudioContextClass) {
-        const voiceUrl = URL.createObjectURL(generatedVoice);
-        objectUrls.push(voiceUrl);
-        const voiceAudio = new Audio(voiceUrl);
-        voiceAudio.preload = "auto";
-        const ac = new AudioContextClass();
-        const source = ac.createMediaElementSource(voiceAudio);
-        const destination = ac.createMediaStreamDestination();
-        source.connect(destination);
-        source.connect(ac.destination);
-        destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
-        await voiceAudio.play().catch(() => {});
-      }
-
-      if (audioUrl && AudioContextClass) {
-        audio = new Audio(audioUrl);
-        audio.crossOrigin = "anonymous";
-        audio.preload = "auto";
-        const ac = new AudioContextClass();
-        const source = ac.createMediaElementSource(audio);
-        const destination = ac.createMediaStreamDestination();
-        musicGainNode = ac.createGain();
-        musicGainNode.gain.value = 0.72;
-        source.connect(musicGainNode);
-        musicGainNode.connect(destination);
-        musicGainNode.connect(ac.destination);
-        musicAudioContext = ac;
-        destination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
-        await audio.play().catch(() => {});
-      }
-
-      const mimeCandidates = [
-        "video/webm;codecs=vp8",
-        "video/webm;codecs=vp9",
-        "video/webm"
-      ];
-      const mime = mimeCandidates.find(type => MediaRecorder.isTypeSupported(type));
-      if (!mime) throw new Error("This browser cannot record WebM video. Try Chrome on Android.");
-
-      const recorder = new MediaRecorder(videoStream, {
-        mimeType: mime,
-        videoBitsPerSecond: 1_800_000
-      });
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-      const stopped = new Promise<void>((resolve, reject) => {
-        recorder.onstop = () => resolve();
-        recorder.onerror = () => reject(new Error("The browser stopped video recording unexpectedly."));
-      });
-
-      recorder.start(500);
+      recorder.start(1000);
 
       const editPlan = autoEdit?.edits || [];
 
@@ -680,16 +644,16 @@ export default function Home() {
           ? rawImageUrl
           : `/api/image-proxy?url=${encodeURIComponent(rawImageUrl)}`;
 
-        // Fetch through our same-origin proxy, turn the response into a local Blob URL,
-        // then draw that local image into canvas. This avoids remote-image CORS issues.
         const imageResponse = await fetch(imageUrl, { cache: "no-store" });
         if (!imageResponse.ok) {
           throw new Error(`Scene ${i + 1} image download failed (HTTP ${imageResponse.status}).`);
         }
+
         const imageBlob = await imageResponse.blob();
         if (!imageBlob.type.startsWith("image/")) {
           throw new Error(`Scene ${i + 1} did not return an image.`);
         }
+
         const localImageUrl = URL.createObjectURL(imageBlob);
         objectUrls.push(localImageUrl);
 
@@ -699,51 +663,37 @@ export default function Home() {
           img.onerror = () => reject(new Error(`Scene ${i + 1} image could not be decoded.`));
           img.src = localImageUrl;
         });
-        if (typeof img.decode === "function") await img.decode().catch(() => {});
 
-        const voiceClip = voiceClips[Number(shot.number)];
+        const duration = Math.max(2, Number(shot.duration) || 8) * 1000;
+        const startTime = performance.now();
         const edit = editPlan[i];
-        if (musicGainNode && musicAudioContext) {
-          musicGainNode.gain.setTargetAtTime(edit?.musicGain ?? 0.72, musicAudioContext.currentTime, 0.04);
-        }
 
-        const start = performance.now();
-        const duration = Math.max(3, Number(shot.duration) || 8) * 1000;
-        const subtitle = timeline[i]?.subtitle || shot.dialogue || "";
-
-        if (voiceClip) {
-          const idx = Object.keys(voiceClips).findIndex(k => Number(k) === Number(shot.number));
-          const player = voicePlayers[idx];
-          if (player) {
-            player.currentTime = 0;
-            await player.play().catch(() => {});
-          }
-        }
-
-        while (performance.now() - start < duration) {
-          const p = Math.min(1, (performance.now() - start) / duration);
-          const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .11
-            : shot.motion === "slow zoom out" ? 1.13 - p * .11 : 1.08;
-          const pan = shot.motion === "pan right" ? (-.02 + p * .04) : 0;
+        while (performance.now() - startTime < duration) {
+          const p = Math.min(1, (performance.now() - startTime) / duration);
+          const zoom = shot.motion === "slow zoom in" ? 1.02 + p * .08
+            : shot.motion === "slow zoom out" ? 1.10 - p * .08 : 1.05;
+          const pan = shot.motion === "pan right" ? (-.015 + p * .03) : 0;
           const scale = Math.max(canvas.width / img.width, canvas.height / img.height) * zoom;
-          const w = img.width * scale, h = img.height * scale;
+          const w = img.width * scale;
+          const h = img.height * scale;
 
           ctx.fillStyle = "#08060f";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
           ctx.drawImage(img, (canvas.width - w) / 2 + pan * canvas.width, (canvas.height - h) / 2, w, h);
-          ctx.fillStyle = "rgba(8,6,15,.32)";
+          ctx.fillStyle = "rgba(8,6,15,.28)";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-          ctx.fillStyle = "white";
-          ctx.font = "700 24px Arial";
-          ctx.fillText(shot.title || `Scene ${i + 1}`, 28, 44);
+          ctx.fillStyle = "#fff";
+          ctx.font = "700 18px Arial";
+          ctx.fillText(shot.title || `Scene ${i + 1}`, 18, 30);
 
+          const subtitle = timeline[i]?.subtitle || shot.dialogue || "";
           if (subtitle) {
-            const maxWidth = 720;
+            ctx.font = "700 18px Arial";
+            const maxWidth = 550;
             const words = String(subtitle).split(/\\s+/);
             const lines: string[] = [];
             let line = "";
-            ctx.font = "700 24px Arial";
             for (const word of words) {
               const test = line ? line + " " + word : word;
               if (ctx.measureText(test).width > maxWidth && line) {
@@ -753,15 +703,15 @@ export default function Home() {
             }
             if (line) lines.push(line);
 
-            const lineHeight = 31;
-            const boxH = lines.length * lineHeight + 24;
-            const boxY = canvas.height - boxH - 22;
+            const lineHeight = 23;
+            const boxH = lines.length * lineHeight + 18;
+            const boxY = canvas.height - boxH - 14;
             ctx.fillStyle = "rgba(0,0,0,.72)";
-            ctx.fillRect(46, boxY, canvas.width - 92, boxH);
+            ctx.fillRect(20, boxY, canvas.width - 40, boxH);
             ctx.fillStyle = "#fff";
             lines.forEach((text, idx) => {
               const tw = ctx.measureText(text).width;
-              ctx.fillText(text, (canvas.width - tw) / 2, boxY + 20 + (idx + 1) * lineHeight);
+              ctx.fillText(text, (canvas.width - tw) / 2, boxY + 16 + (idx + 1) * lineHeight);
             });
           }
 
@@ -770,18 +720,15 @@ export default function Home() {
         }
       }
 
-      audio?.pause();
-      voicePlayers.forEach(player => player.pause());
-      recorder.stop();
+      if (recorder.state === "recording") recorder.stop();
       await stopped;
 
-      if (!chunks.length) throw new Error("No video data was produced by the browser.");
+      if (!chunks.length) {
+        throw new Error("The browser produced no video data. Try opening Anime Studio directly in Chrome.");
+      }
+
       return new Blob(chunks, { type: mime });
     } finally {
-      audio?.pause();
-      voicePlayers.forEach(player => player.pause());
-      voiceAudioContext?.close().catch(() => {});
-      musicAudioContext?.close().catch(() => {});
       objectUrls.forEach(url => URL.revokeObjectURL(url));
       videoStream.getTracks().forEach(track => track.stop());
     }
