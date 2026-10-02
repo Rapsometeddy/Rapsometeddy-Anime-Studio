@@ -3,11 +3,25 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const rawSupabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
-const SUPABASE_URL = rawSupabaseUrl
-  ? (rawSupabaseUrl.startsWith("http://") || rawSupabaseUrl.startsWith("https://")
-      ? rawSupabaseUrl.replace(/\/$/, "")
-      : `https://${rawSupabaseUrl.replace(/\/$/, "")}.supabase.co`)
-  : "";
+
+function normalizeSupabaseUrl(value: string) {
+  const trimmed = value.trim().replace(/\/$/, "");
+  if (!trimmed) return "";
+  const candidate = trimmed.startsWith("http://") || trimmed.startsWith("https://")
+    ? trimmed
+    : `https://${trimmed}.supabase.co`;
+
+  try {
+    const url = new URL(candidate);
+    // Accept a project URL or an accidentally supplied Data API URL,
+    // but always use the project origin for Storage endpoints.
+    return url.origin;
+  } catch {
+    return "";
+  }
+}
+
+const SUPABASE_URL = normalizeSupabaseUrl(rawSupabaseUrl);
 const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ZAPIER_WEBHOOK_URL = process.env.ZAPIER_YOUTUBE_WEBHOOK_URL;
 const BUCKET = "anime-episodes";
