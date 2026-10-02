@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 export const runtime = "nodejs";
 
 const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ZAPIER_WEBHOOK_URL = process.env.ZAPIER_YOUTUBE_WEBHOOK_URL;
 const BUCKET = "anime-episodes";
 const MAX_BYTES = 100 * 1024 * 1024;
