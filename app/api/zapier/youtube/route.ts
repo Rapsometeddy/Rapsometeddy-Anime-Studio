@@ -2,7 +2,12 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const rawSupabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+const SUPABASE_URL = rawSupabaseUrl
+  ? (rawSupabaseUrl.startsWith("http://") || rawSupabaseUrl.startsWith("https://")
+      ? rawSupabaseUrl.replace(/\/$/, "")
+      : `https://${rawSupabaseUrl.replace(/\/$/, "")}.supabase.co`)
+  : "";
 const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
 const ZAPIER_WEBHOOK_URL = process.env.ZAPIER_YOUTUBE_WEBHOOK_URL;
 const BUCKET = "anime-episodes";
