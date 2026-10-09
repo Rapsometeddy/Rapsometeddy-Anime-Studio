@@ -578,12 +578,11 @@ export default function Home() {
   async function buildWebmBlob(): Promise<Blob> {
     if (!motion?.shots?.length) throw new Error("Generate motion scenes first.");
 
-    // Reliability-first mobile renderer. Keep the first export video-only:
-    // Android MediaRecorder can reject mixed canvas + WebAudio streams on some devices.
-    // Audio can be muxed later after a stable video file exists.
+    // Render at 720p and explicitly mux Web Audio into the MediaRecorder stream.
+    // Canvas capture alone contains video only, so add the AudioContext destination tracks.
     const canvas = document.createElement("canvas");
-    canvas.width = 640;
-    canvas.height = 360;
+    canvas.width = 1280;
+    canvas.height = 720;
     const ctx = canvas.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("Canvas is not supported on this device.");
 
@@ -591,9 +590,40 @@ export default function Home() {
       throw new Error("Video capture is unavailable in this browser. Open Anime Studio in Chrome.");
     }
 
-    const videoStream = canvas.captureStream(15);
+    const videoStream = canvas.captureStream(24);
     const videoTrack = videoStream.getVideoTracks()[0];
     if (!videoTrack) throw new Error("The browser did not create a video capture track.");
+
+    const audioContext = new AudioContext();
+    const audioDestination = audioContext.createMediaStreamDestination();
+    const musicElement = audioUrl ? new Audio(audioUrl) : null;
+    const voiceElements: HTMLAudioElement[] = [];
+    let musicGain: GainNode | null = null;
+    if (musicElement) {
+      musicElement.preload = "auto";
+      musicElement.loop = false;
+      const musicSource = audioContext.createMediaElementSource(musicElement);
+      musicGain = audioContext.createGain();
+      musicGain.gain.value = 0.72;
+      musicSource.connect(musicGain);
+      musicGain.connect(audioDestination);
+    }
+    for (const [sceneKey, file] of Object.entries(voiceClips)) {
+      const voiceElement = new Audio(URL.createObjectURL(file));
+      voiceElement.preload = "auto";
+      const voiceSource = audioContext.createMediaElementSource(voiceElement);
+      const voiceGain = audioContext.createGain();
+      voiceGain.gain.value = 1;
+      voiceSource.connect(voiceGain);
+      voiceGain.connect(audioDestination);
+      voiceElements.push(voiceElement);
+    }
+    audioDestination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
+    if (audioDestination.stream.getAudioTracks().length === 0) {
+      audioContext.close();
+      videoStream.getTracks().forEach(track => track.stop());
+      throw new Error("Could not create an audio track. Please use Chrome and try again.");
+    }
 
     const mimeCandidates = [
       "video/webm",
@@ -629,11 +659,18 @@ export default function Home() {
     });
 
     const objectUrls: string[] = [];
+    const voiceObjectUrls = Object.values(voiceClips).map(file => URL.createObjectURL(file));
+    const renderStartedAt = performance.now();
 
     try {
+      await audioContext.resume();
       recorder.start(1000);
+      if (musicElement) {
+        try { await musicElement.play(); } catch { throw new Error("Music could not start. Tap play on the uploaded track once, then export again."); }
+      }
 
       const editPlan = autoEdit?.edits || [];
+      let elapsedBeforeShot = 0;
 
       for (let i = 0; i < motion.shots.length; i++) {
         const shot = motion.shots[i];
@@ -667,6 +704,21 @@ export default function Home() {
         const duration = Math.max(2, Number(shot.duration) || 8) * 1000;
         const startTime = performance.now();
         const edit = editPlan[i];
+        const shotStartSeconds = elapsedBeforeShot / 1000;
+        const sceneNumber = Number(shot.sceneNumber || shot.number) || i + 1;
+        const voiceFile = voiceClips[sceneNumber];
+        if (voiceFile) {
+          const voiceIndex = Object.keys(voiceClips).indexOf(String(sceneNumber));
+          const voiceElement = voiceElements[voiceIndex];
+          if (voiceElement) {
+            voiceElement.currentTime = 0;
+            voiceElement.play().catch(() => {});
+          }
+        }
+        if (musicGain) {
+          const targetGain = (shot.dialogue || timeline[i]?.subtitle) ? 0.28 : 0.72;
+          musicGain.gain.setTargetAtTime(targetGain, audioContext.currentTime, 0.08);
+        }
 
         while (performance.now() - startTime < duration) {
           const p = Math.min(1, (performance.now() - startTime) / duration);
@@ -679,18 +731,23 @@ export default function Home() {
 
           ctx.fillStyle = "#08060f";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, 0, canvas.width, canvas.height);
+          ctx.clip();
           ctx.drawImage(img, (canvas.width - w) / 2 + pan * canvas.width, (canvas.height - h) / 2, w, h);
-          ctx.fillStyle = "rgba(8,6,15,.28)";
+          ctx.restore();
+          ctx.fillStyle = "rgba(8,6,15,.18)";
           ctx.fillRect(0, 0, canvas.width, canvas.height);
 
           ctx.fillStyle = "#fff";
-          ctx.font = "700 18px Arial";
-          ctx.fillText(shot.title || `Scene ${i + 1}`, 18, 30);
+          ctx.font = "700 30px Arial";
+          ctx.fillText(shot.title || `Scene ${i + 1}`, 36, 54);
 
-          const subtitle = timeline[i]?.subtitle || shot.dialogue || "";
+          const subtitle = timeline.find((s: any) => Number(s.number) === sceneNumber)?.subtitle || shot.dialogue || "";
           if (subtitle) {
-            ctx.font = "700 18px Arial";
-            const maxWidth = 550;
+            ctx.font = "700 32px Arial";
+            const maxWidth = 1120;
             const words = String(subtitle).split(/\\s+/);
             const lines: string[] = [];
             let line = "";
@@ -703,21 +760,22 @@ export default function Home() {
             }
             if (line) lines.push(line);
 
-            const lineHeight = 23;
-            const boxH = lines.length * lineHeight + 18;
-            const boxY = canvas.height - boxH - 14;
-            ctx.fillStyle = "rgba(0,0,0,.72)";
-            ctx.fillRect(20, boxY, canvas.width - 40, boxH);
+            const lineHeight = 42;
+            const boxH = lines.length * lineHeight + 30;
+            const boxY = canvas.height - boxH - 28;
+            ctx.fillStyle = "rgba(0,0,0,.76)";
+            ctx.fillRect(40, boxY, canvas.width - 80, boxH);
             ctx.fillStyle = "#fff";
             lines.forEach((text, idx) => {
               const tw = ctx.measureText(text).width;
-              ctx.fillText(text, (canvas.width - tw) / 2, boxY + 16 + (idx + 1) * lineHeight);
+              ctx.fillText(text, (canvas.width - tw) / 2, boxY + 18 + (idx + 1) * lineHeight);
             });
           }
 
           setExportProgress(Math.round(((i + p) / motion.shots.length) * 100));
           await new Promise(requestAnimationFrame);
         }
+        elapsedBeforeShot += duration;
       }
 
       if (recorder.state === "recording") recorder.stop();
@@ -729,8 +787,12 @@ export default function Home() {
 
       return new Blob(chunks, { type: mime });
     } finally {
+      musicElement?.pause();
+      voiceElements.forEach(element => element.pause());
       objectUrls.forEach(url => URL.revokeObjectURL(url));
+      voiceObjectUrls.forEach(url => URL.revokeObjectURL(url));
       videoStream.getTracks().forEach(track => track.stop());
+      await audioContext.close().catch(() => {});
     }
   }
 
@@ -760,7 +822,7 @@ export default function Home() {
         wasmURL: await toBlobURL(`${base}/ffmpeg-core.wasm`, "application/wasm")
       });
       await ffmpeg.writeFile("input.webm", await fetchFile(webm));
-      await ffmpeg.exec(["-i", "input.webm", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart", "output.mp4"]);
+      await ffmpeg.exec(["-i", "input.webm", "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k", "-movflags", "+faststart", "output.mp4"]);
       const data = await ffmpeg.readFile("output.mp4");
       const mp4Bytes = data instanceof Uint8Array ? data : new TextEncoder().encode(String(data));
       const mp4Buffer = new ArrayBuffer(mp4Bytes.byteLength);
