@@ -1,0 +1,58 @@
+/* Shared Rapsometeddy mobile-first polish; layered on top of the app's existing styles. */
+:root {
+  --rt-bg: #09070f;
+  --rt-surface: #12101c;
+  --rt-surface-raised: #1a1628;
+  --rt-border: #302744;
+  --rt-purple: #8b5cf6;
+  --rt-purple-strong: #7c3aed;
+  --rt-lavender: #c4b5fd;
+  --rt-text: #f7f4ff;
+  --rt-muted: #aaa3ba;
+  --rt-focus: 0 0 0 3px #c4b5fd66;
+}
+html { scroll-behavior: smooth; -webkit-text-size-adjust: 100%; }
+body { color: var(--rt-text); }
+button, input, textarea, select, a { -webkit-tap-highlight-color: transparent; }
+button, input, textarea, select { max-width: 100%; }
+button, .btn, .projectRow, .shotChip, label.btn { min-height: 44px; }
+:where(button, input, textarea, select, a, [tabindex]):focus-visible {
+  outline: 2px solid var(--rt-lavender);
+  outline-offset: 3px;
+  box-shadow: var(--rt-focus);
+}
+:where(button, .btn):active { transform: translateY(1px); }
+:where(input, textarea, select) { scroll-margin-top: 18px; }
+img { max-width: 100%; }
+.card, .hero { min-width: 0; }
+pre, .copyBox, .muted, p, h1, h2, h3 { overflow-wrap: anywhere; }
+.topbar { gap: 12px; }
+.logo { flex: 0 0 auto; background: #09070f url("/crowned-r.svg") center / cover no-repeat; color: transparent; }
+.logo:before { display: none; }
+.btn { transition: transform .16s ease, filter .16s ease, border-color .16s ease; }
+.btn:hover:not(:disabled) { filter: brightness(1.1); }
+.btn:disabled { opacity: .58; }
+.frameImage, .motionImage, .characterRef, .shotCard img, .thumbnailPreview img {
+  background: radial-gradient(circle at 50% 35%, #29203d, #09070f 72%);
+}
+.projectRow, .shotChip { min-height: 44px; }
+@media (max-width: 480px) {
+  .shell { padding: 12px; }
+  .hero { padding: 20px 16px; border-radius: 20px; }
+  .card { padding: 16px; border-radius: 18px; }
+  .hero p { font-size: 15px; }
+  .motionControls, .exportButtons, .storyboardActions { flex-direction: column; }
+  .motionControls > *, .exportButtons > *, .storyboardActions > * { width: 100%; }
+  .workflowSteps span { min-width: 0; }
+  .editRow { gap: 8px; padding: 10px; }
+  .projectRow { align-items: flex-start; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+}
