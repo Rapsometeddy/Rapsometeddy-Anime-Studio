@@ -65,6 +65,7 @@ export default function Home() {
   const [youtubeUploadProgress, setYoutubeUploadProgress] = useState(0);
   const [zapierSending, setZapierSending] = useState(false);
   const [zapierMessage, setZapierMessage] = useState("");
+  const [zapierStatus, setZapierStatus] = useState<any>({ loading: true });
   const [youtubeVideoUrl, setYoutubeVideoUrl] = useState("");
   const [youtubeConnected, setYoutubeConnected] = useState(false);
   const [projects, setProjects] = useState<any[]>([]);
@@ -92,6 +93,21 @@ export default function Home() {
     loadVoices();
     window.speechSynthesis.addEventListener("voiceschanged", loadVoices);
     return () => window.speechSynthesis.removeEventListener("voiceschanged", loadVoices);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    fetch("/api/zapier/status", { cache: "no-store" })
+      .then(async r => {
+        const data = await r.json();
+        if (!r.ok) throw new Error(data.error || "Could not check Zapier setup.");
+        return data;
+      })
+      .then(data => { if (active) setZapierStatus({ ...data, loading: false }); })
+      .catch(() => {
+        if (active) setZapierStatus({ loading: false, unavailable: true, ready: false });
+      });
+    return () => { active = false; };
   }, []);
 
   const totalDuration = useMemo(
@@ -922,7 +938,7 @@ export default function Home() {
       </section>
 
       {result && <section className="card youtubePublisherCard">
-        <div className="resultHeader"><div><div className="badge">⚡ ZAPIER → YOUTUBE</div><h2>Automated publishing handoff</h2><p className="muted">Approve the episode, choose the rendered MP4, then hand it to Zapier. Zapier can upload the video to your connected YouTube channel and continue the social workflow.</p></div><div className="modePill">{zapierSending ? "SENDING" : "READY"}</div></div>
+        <div className="resultHeader"><div><div className="badge">⚡ ZAPIER → YOUTUBE</div><h2>Automated publishing handoff</h2><p className="muted">Approve the episode, choose the rendered MP4 or WebM, then hand it to your published Zapier workflow.</p></div><div className="modePill">{zapierSending ? "SENDING" : zapierStatus?.loading ? "CHECKING" : zapierStatus?.ready ? "READY" : "SETUP NEEDED"}</div></div>
         <div className="ytPublishGrid">
           <div>
             <div className="label">Publishing gate</div>
@@ -936,11 +952,25 @@ export default function Home() {
             </select>
           </div>
           <div>
-            <div className="label">Rendered MP4</div>
+            <div className="label">Rendered video (MP4 or WebM)</div>
             <input className="input" type="file" accept="video/mp4,video/webm,video/*" onChange={e => e.target.files?.[0] && setYoutubeVideoFile(e.target.files[0])} />
             {youtubeVideoFile && <div className="muted">🎬 {youtubeVideoFile.name} • {(youtubeVideoFile.size / 1024 / 1024).toFixed(1)} MB</div>}
           </div>
         </div>
+        {zapierStatus?.loading ? (
+          <div className="notice">🔎 Checking secure storage and Zapier handoff configuration…</div>
+        ) : zapierStatus?.unavailable ? (
+          <div className="notice">⚠️ Setup status could not be checked. The Send button will return the specific server error.</div>
+        ) : !zapierStatus?.ready ? (
+          <div className="notice">
+            ⚠️ <b>Publishing setup required.</b>{" "}
+            {!zapierStatus?.storageReady ? "Secure storage is not configured. " : "Secure storage is ready. "}
+            {!zapierStatus?.webhookValid ? "The Zapier Catch Hook URL is missing or invalid. Create and publish a Zap using Webhooks by Zapier → Catch Hook, then set its URL in Vercel as ZAPIER_YOUTUBE_WEBHOOK_URL. " : ""}
+            <a href="https://vercel.com/rapsometeddy017-9306/rapsometeddyanimestudio/settings/environment-variables" target="_blank" rel="noreferrer">Open Vercel environment variables ↗</a>
+          </div>
+        ) : (
+          <div className="notice">✅ Secure storage and the Zapier Catch Hook are configured. YouTube upload still depends on the YouTube step being mapped and the Zap being switched on.</div>
+        )}
         <div className="motionControls">
           <button className="btn storyboardBtn" disabled={zapierSending || workflowStatus !== "approved" || !youtubeVideoFile} onClick={sendToZapier}>
             {zapierSending ? "⚡ Sending to Zapier…" : "⚡ Send approved episode to Zapier"}
