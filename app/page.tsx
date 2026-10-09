@@ -608,8 +608,9 @@ export default function Home() {
       musicSource.connect(musicGain);
       musicGain.connect(audioDestination);
     }
-    for (const [sceneKey, file] of Object.entries(voiceClips)) {
-      const voiceElement = new Audio(URL.createObjectURL(file));
+    const voiceObjectUrls = Object.values(voiceClips).map(file => URL.createObjectURL(file));
+    Object.values(voiceClips).forEach((file, index) => {
+      const voiceElement = new Audio(voiceObjectUrls[index]);
       voiceElement.preload = "auto";
       const voiceSource = audioContext.createMediaElementSource(voiceElement);
       const voiceGain = audioContext.createGain();
@@ -617,7 +618,7 @@ export default function Home() {
       voiceSource.connect(voiceGain);
       voiceGain.connect(audioDestination);
       voiceElements.push(voiceElement);
-    }
+    });
     audioDestination.stream.getAudioTracks().forEach(track => videoStream.addTrack(track));
     if (audioDestination.stream.getAudioTracks().length === 0) {
       audioContext.close();
@@ -659,8 +660,7 @@ export default function Home() {
     });
 
     const objectUrls: string[] = [];
-    const voiceObjectUrls = Object.values(voiceClips).map(file => URL.createObjectURL(file));
-    const renderStartedAt = performance.now();
+    
 
     try {
       await audioContext.resume();
