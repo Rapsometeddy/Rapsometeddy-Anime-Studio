@@ -1,7 +1,35 @@
 import { NextResponse } from "next/server";
 
-const SUPABASE_URL = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
-const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
+function serverEnv(name: string) {
+  const direct = process.env[name]?.trim();
+  if (direct) return direct;
+  const suffix = `_${name}`;
+  const prefixed = Object.entries(process.env).find(([key, value]) =>
+    !key.startsWith("NEXT_PUBLIC_") &&
+    key.endsWith(suffix) &&
+    typeof value === "string" &&
+    value.trim().length > 0
+  );
+  return prefixed?.[1]?.trim() || "";
+}
+
+function normalizeSupabaseUrl(value: string) {
+  const trimmed = value.trim().replace(/\/+$/, "");
+  if (!trimmed) return "";
+  const candidate = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : /^[a-z0-9-]+\.supabase\.co$/i.test(trimmed)
+      ? `https://${trimmed}`
+      : `https://${trimmed.split("/")[0]}.supabase.co`;
+  try {
+    return new URL(candidate).origin;
+  } catch {
+    return "";
+  }
+}
+
+const SUPABASE_URL = normalizeSupabaseUrl(serverEnv("SUPABASE_URL") || process.env.NEXT_PUBLIC_SUPABASE_URL || "");
+const SUPABASE_KEY = serverEnv("SUPABASE_SECRET_KEY") || serverEnv("SUPABASE_SERVICE_ROLE_KEY");
 
 async function db(path: string, init: RequestInit = {}) {
   if (!SUPABASE_URL || !SUPABASE_KEY) throw new Error("Supabase environment variables are not configured.");
