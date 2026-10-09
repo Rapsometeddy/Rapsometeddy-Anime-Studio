@@ -2,28 +2,58 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const rawSupabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
+function serverEnv(name: string) {
+  const direct = process.env[name]?.trim();
+  if (direct) return direct;
+
+  // Vercel's Supabase integration prefixes variables with the project ref.
+  // Read only server-side variables; never fall back to NEXT_PUBLIC secrets.
+  const suffix = `_${name}`;
+  const prefixed = Object.entries(process.env).find(([key, value]) =>
+    !key.startsWith("NEXT_PUBLIC_") &&
+    key.endsWith(suffix) &&
+    typeof value === "string" &&
+    value.trim().length > 0
+  );
+  return prefixed?.[1]?.trim() || "";
+}
+
+const rawSupabaseUrl = serverEnv("SUPABASE_URL") || process.env.NEXT_PUBLIC_SUPABASE_URL || "";
 
 function normalizeSupabaseUrl(value: string) {
-  const trimmed = value.trim().replace(/\/$/, "");
+  const trimmed = value.trim().replace(/\/+$/, "");
   if (!trimmed) return "";
-  const candidate = trimmed.startsWith("http://") || trimmed.startsWith("https://")
-    ? trimmed
-    : `https://${trimmed}.supabase.co`;
+
+  let candidate = trimmed;
+  if (!/^https?:\/\//i.test(candidate)) {
+    candidate = /^[a-z0-9-]+\.supabase\.co$/i.test(candidate)
+      ? `https://${candidate}`
+      : `https://${candidate.split("/")[0]}.supabase.co`;
+  }
 
   try {
     const url = new URL(candidate);
-    // Accept a project URL or an accidentally supplied Data API URL,
-    // but always use the project origin for Storage endpoints.
+    // Accept a project URL, project ref, or Data API URL; Storage always uses the origin.
     return url.origin;
   } catch {
     return "";
   }
 }
 
+function isZapierCatchHook(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" &&
+      url.hostname === "hooks.zapier.com" &&
+      url.pathname.includes("/hooks/catch/");
+  } catch {
+    return false;
+  }
+}
+
 const SUPABASE_URL = normalizeSupabaseUrl(rawSupabaseUrl);
-const SUPABASE_KEY = process.env.SUPABASE_SECRET_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY;
-const ZAPIER_WEBHOOK_URL = process.env.ZAPIER_YOUTUBE_WEBHOOK_URL;
+const SUPABASE_KEY = serverEnv("SUPABASE_SECRET_KEY") || serverEnv("SUPABASE_SERVICE_ROLE_KEY");
+const ZAPIER_WEBHOOK_URL = (process.env.ZAPIER_YOUTUBE_WEBHOOK_URL || "").trim();
 const BUCKET = "anime-episodes";
 const MAX_BYTES = 100 * 1024 * 1024;
 
@@ -56,9 +86,14 @@ async function ensureBucket() {
 
 export async function POST(req: Request) {
   try {
-    if (!ZAPIER_WEBHOOK_URL) {
+    if (!isZapierCatchHook(ZAPIER_WEBHOOK_URL)) {
       return NextResponse.json({
-        error: "Zapier is not configured yet. Add ZAPIER_YOUTUBE_WEBHOOK_URL in Vercel."
+        error: "Zapier Catch Hook URL is missing or invalid. Publish a Zap with Webhooks by Zapier → Catch Hook, then set its HTTPS hooks.zapier.com URL as ZAPIER_YOUTUBE_WEBHOOK_URL in Vercel."
+      }, { status: 503 });
+    }
+    if (!SUPABASE_URL || !SUPABASE_KEY) {
+      return NextResponse.json({
+        error: "Secure video storage is not configured. Check the Supabase URL and server secret key in Vercel."
       }, { status: 503 });
     }
 
@@ -87,7 +122,12 @@ export async function POST(req: Request) {
     await ensureBucket();
 
     const safeTitle = title.replace(/[^a-zA-Z0-9-_]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 70) || "episode";
-    const path = `rapsometeddy/${Date.now()}-${safeTitle}.mp4`;
+    const extension = file.type.toLowerCase() === "video/webm" || file.name.toLowerCase().endsWith(".webm")
+      ? "webm"
+      : file.type.toLowerCase() === "video/quicktime" || file.name.toLowerCase().endsWith(".mov")
+        ? "mov"
+        : "mp4";
+    const path = `rapsometeddy/${Date.now()}-${safeTitle}.${extension}`;
     const bytes = new Uint8Array(await file.arrayBuffer());
 
     const upload = await fetch(`${SUPABASE_URL}/storage/v1/object/${BUCKET}/${path}`, {
@@ -139,11 +179,16 @@ export async function POST(req: Request) {
       expiresAt: new Date(Date.now() + 3600 * 1000).toISOString()
     };
 
-    const hook = await fetch(ZAPIER_WEBHOOK_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload)
-    });
+    let hook: Response;
+    try {
+      hook = await fetch(ZAPIER_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+    } catch {
+      throw new Error("Could not reach the Zapier Catch Hook. Check that ZAPIER_YOUTUBE_WEBHOOK_URL contains the active hook from your published Zap.");
+    }
 
     if (!hook.ok) {
       const detail = await hook.text().catch(() => "");
@@ -161,6 +206,9 @@ export async function POST(req: Request) {
       message: "Approved episode handed to Zapier. Zapier can now upload it to YouTube."
     });
   } catch (e: any) {
-    return NextResponse.json({ error: e.message || "Could not hand the episode to Zapier." }, { status: 500 });
+    const message = e?.message === "fetch failed"
+      ? "Could not reach Supabase Storage. Check the Supabase project URL and server secret key in Vercel."
+      : e?.message || "Could not hand the episode to Zapier.";
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
