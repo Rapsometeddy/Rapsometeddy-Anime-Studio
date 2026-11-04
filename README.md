@@ -22,3 +22,7 @@ Set `POLLINATIONS_API_KEY` in Vercel for authenticated requests. The API support
 Free availability is not treated as unlimited: current provider documentation says authenticated generation requires an API key and pricing/credits can change. citeturn0search0
 
 Never commit API keys.
+
+## 👑 RV-1 Image Studio
+
+A separate from-scratch image-generation research module is available at [`/image-studio`](./app/image-studio/page.tsx). It adds Rapsometeddy Vision 1 (RV-1) without replacing the existing anime episode workflow. RV-1 starts with randomly initialized weights, a custom text encoder and a small pixel-space diffusion model. It does not call Pollinations or another external image-generation API. See [`rv1/README.md`](./rv1/README.md) for training and dataset provenance instructions. A trained checkpoint is not included yet.
