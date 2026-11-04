@@ -868,7 +868,7 @@ export default function Home() {
     <main className="shell">
       <header className="topbar">
         <div className="brand"><div className="logo">R</div><div><div>Rapsometeddy <span className="purple">Anime Studio</span></div><div className="muted">CREATE • ANIMATE • SCORE</div></div></div>
-        <div className="badge">FREE-FIRST PIPELINE</div>
+        <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}><a href="/image-studio" className="badge" style={{color:"#d9c5ff",borderColor:"#7543a8"}}>✨ RV-1 Image Studio</a><div className="badge">FREE-FIRST PIPELINE</div></div>
       </header>
 
       <section className="hero">
